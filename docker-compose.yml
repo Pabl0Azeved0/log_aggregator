@@ -1,0 +1,74 @@
+services:
+  kafka:
+    image: apache/kafka:3.9.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.0
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - osdata:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  ingest:
+    build: .
+    command: uvicorn log_aggregator.ingest_api:app --host 0.0.0.0 --port 8000 --workers 2
+    environment:
+      BUFFER_BACKEND: kafka
+      KAFKA_BOOTSTRAP: kafka:9092
+    ports:
+      - "8000:8000"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  indexer:
+    build: .
+    command: python -m log_aggregator.indexer
+    environment:
+      BUFFER_BACKEND: kafka
+      KAFKA_BOOTSTRAP: kafka:9092
+      STORE_BACKEND: opensearch
+      OPENSEARCH_URL: http://opensearch:9200
+    depends_on:
+      kafka:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+
+  query:
+    build: .
+    command: uvicorn log_aggregator.query_api:app --host 0.0.0.0 --port 8080
+    environment:
+      STORE_BACKEND: opensearch
+      OPENSEARCH_URL: http://opensearch:9200
+    ports:
+      - "8080:8080"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+volumes:
+  osdata:

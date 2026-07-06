@@ -20,6 +20,8 @@ producers ──► ingest API (FastAPI, async, backpressure)
         query API ──► dashboard (search · live tail)
 ```
 
+![log-aggreagator demo](docs/dashboard-demo.gif)
+
 ## Quickstart
 
 ```bash

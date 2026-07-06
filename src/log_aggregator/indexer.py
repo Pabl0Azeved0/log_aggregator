@@ -15,7 +15,7 @@ from pathlib import Path
 
 from log_aggregator.buffer import Buffer, make_buffer
 from log_aggregator.config import Settings, get_settings
-from log_aggregator.store import Store, make_store
+from log_aggregator.store import PartialIndexError, Store, make_store
 
 log = logging.getLogger("indexer")
 
@@ -23,19 +23,28 @@ _RETRIES = 3
 _RETENTION_INTERVAL_S = 3600
 
 
+def _dead_letter(path: Path, events: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as fh:
+        for event in events:
+            fh.write(json.dumps(event) + "\n")
+    log.error("dead-lettered %d events to %s", len(events), path)
+
+
 async def _index_with_retry(store: Store, batch: list[dict], dead_letter: Path) -> int:
     for attempt in range(1, _RETRIES + 1):
         try:
             return await store.index(batch)
+        except PartialIndexError as exc:
+            # per-document rejections won't succeed on retry — dead-letter only those,
+            # keep the ones that indexed.
+            _dead_letter(dead_letter, exc.failed)
+            return exc.indexed
         except Exception as exc:  # noqa: BLE001
             log.warning("index attempt %d/%d failed: %s", attempt, _RETRIES, exc)
             if attempt < _RETRIES:
                 await asyncio.sleep(2 ** (attempt - 1))
-    dead_letter.parent.mkdir(parents=True, exist_ok=True)
-    with dead_letter.open("a") as fh:
-        for event in batch:
-            fh.write(json.dumps(event) + "\n")
-    log.error("dead-lettered %d events to %s", len(batch), dead_letter)
+    _dead_letter(dead_letter, batch)
     return 0
 
 

@@ -85,6 +85,26 @@ def test_dead_letter_on_persistent_index_failure(tmp_path, monkeypatch):
     asyncio.run(flow())
 
 
+def test_partial_index_failure_dead_letters_only_rejected(tmp_path):
+    from log_aggregator.store import PartialIndexError
+
+    class PartialStore(MemoryStore):
+        async def index(self, events):
+            await super().index(events[1:])  # all but the first succeed
+            raise PartialIndexError(len(events) - 1, [events[0]])
+
+    async def flow():
+        buf = MemoryBuffer(maxsize=10)
+        await buf.publish([LogEvent(message=f"msg{i}").model_dump(mode="json") for i in range(3)])
+        settings = _settings()
+        settings.dead_letter_path = str(tmp_path / "dl.jsonl")
+        indexed = await indexer.run(buf, PartialStore(), settings, once=True)
+        assert indexed == 2
+        dl = (tmp_path / "dl.jsonl").read_text()
+        assert dl.count("msg0") == 1 and dl.count("msg1") == 0 and dl.count("msg2") == 0
+    asyncio.run(flow())
+
+
 async def _instant_sleep(_secs):
     return None
 

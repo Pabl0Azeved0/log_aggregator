@@ -22,6 +22,17 @@ _TEMPLATE = {
 }
 
 
+class PartialIndexError(Exception):
+    """Some documents in a batch were rejected by the store (a per-document error, not a
+    transport failure). Carries the count successfully indexed and the rejected events so
+    the caller can dead-letter only the failures instead of the whole batch."""
+
+    def __init__(self, indexed: int, failed: list[dict]) -> None:
+        super().__init__(f"{len(failed)} of {indexed + len(failed)} documents rejected")
+        self.indexed = indexed
+        self.failed = failed
+
+
 class Store(Protocol):
     async def index(self, events: list[dict]) -> int: ...
     async def search(self, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]: ...
@@ -29,6 +40,13 @@ class Store(Protocol):
     async def stats(self) -> dict: ...
     async def apply_retention(self) -> int: ...
     async def close(self) -> None: ...
+
+
+async def _aenumerate(aiter, start: int = 0):
+    i = start
+    async for item in aiter:
+        yield i, item
+        i += 1
 
 
 def _parse_ts(value) -> datetime:
@@ -110,11 +128,24 @@ class OpenSearchStore:
         return "logs-" + _parse_ts(event["timestamp"]).strftime("%Y.%m.%d")
 
     async def index(self, events: list[dict]) -> int:
-        from opensearchpy.helpers import async_bulk
+        from opensearchpy.helpers import async_streaming_bulk
 
         client = await self._get_client()
         actions = [{"_index": self._index_for(e), "_source": e} for e in events]
-        ok, _ = await async_bulk(client, actions, raise_on_error=True)
+        ok = 0
+        failed: list[dict] = []
+        # streaming_bulk yields one result per action, in order. raise_on_error=False lets
+        # per-document rejections surface as (False, info) instead of taking the whole
+        # batch down; transport/connection errors still raise (retried by the caller).
+        async for i, (succeeded, _info) in _aenumerate(
+            async_streaming_bulk(client, actions, raise_on_error=False)
+        ):
+            if succeeded:
+                ok += 1
+            else:
+                failed.append(events[i])
+        if failed:
+            raise PartialIndexError(ok, failed)
         return ok
 
     async def search(self, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]:

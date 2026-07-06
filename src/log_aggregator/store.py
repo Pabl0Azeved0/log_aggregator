@@ -143,6 +143,7 @@ class OpenSearchStore:
         client = await self._get_client()
         body = {
             "size": 0,
+            "track_total_hits": True,  # else hits.total.value caps at 10000
             "aggs": {
                 "by_level": {"terms": {"field": "level"}},
                 "by_service": {"terms": {"field": "service"}},

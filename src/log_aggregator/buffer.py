@@ -109,7 +109,7 @@ class KafkaBuffer:
             await self._consumer.stop()
 
 
-def make_buffer(settings: Settings):
+def make_buffer(settings: Settings) -> Buffer:
     if settings.buffer_backend == "memory":
         return MemoryBuffer(settings.memory_queue_max)
     return KafkaBuffer(settings.kafka_bootstrap, settings.kafka_topic)

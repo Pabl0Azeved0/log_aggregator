@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from dotenv import load_dotenv
 
@@ -22,5 +23,6 @@ class Settings:
     dead_letter_path: str = field(default_factory=lambda: os.getenv("DEAD_LETTER_PATH", "dead_letter/failed.jsonl"))
 
 
+@lru_cache
 def get_settings() -> Settings:
     return Settings()

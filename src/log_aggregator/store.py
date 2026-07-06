@@ -227,7 +227,7 @@ class OpenSearchStore:
             await self._client.close()
 
 
-def make_store(settings: Settings):
+def make_store(settings: Settings) -> Store:
     if settings.store_backend == "memory":
         return MemoryStore(settings.retention_days)
     return OpenSearchStore(settings.opensearch_url, settings.retention_days)

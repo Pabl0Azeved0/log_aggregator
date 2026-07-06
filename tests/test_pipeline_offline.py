@@ -92,6 +92,35 @@ def test_dead_letter_on_persistent_index_failure(tmp_path, monkeypatch):
     asyncio.run(flow())
 
 
+def test_redelivered_event_is_indexed_once():
+    async def flow():
+        store = MemoryStore()
+        e = LogEvent(service="api", level="ERROR", message="boom").model_dump(mode="json")
+        assert await store.index([e]) == 1
+        assert await store.index([e]) == 0  # redelivery: same _id, no new doc
+        assert await store.count() == 1
+    asyncio.run(flow())
+
+
+def test_indexer_commits_after_batch(tmp_path):
+    class CountingBuffer(MemoryBuffer):
+        def __init__(self, maxsize):
+            super().__init__(maxsize)
+            self.commits = 0
+
+        async def commit(self):
+            self.commits += 1
+
+    async def flow():
+        buf = CountingBuffer(maxsize=10)
+        await buf.publish([LogEvent(message="x").model_dump(mode="json")])
+        settings = _settings()
+        settings.dead_letter_path = str(tmp_path / "dl.jsonl")
+        await indexer.run(buf, MemoryStore(), settings, once=True)
+        assert buf.commits == 1  # one batch handled → one commit
+    asyncio.run(flow())
+
+
 def test_partial_index_failure_dead_letters_only_rejected(tmp_path):
     from log_aggregator.store import PartialIndexError
 

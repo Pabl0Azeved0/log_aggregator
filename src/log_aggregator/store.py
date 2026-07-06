@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
@@ -45,6 +47,18 @@ class Store(Protocol):
     async def close(self) -> None: ...
 
 
+def _doc_id(event: dict) -> str:
+    """Deterministic id from event content so a redelivered event overwrites its prior copy
+    (effectively-once) instead of creating a duplicate. The timestamp is set once at ingest
+    and carried through Kafka, so a redelivered event hashes to the same id."""
+    payload = json.dumps(
+        [event.get("timestamp"), event.get("service"), event.get("level"),
+         event.get("message"), event.get("attrs")],
+        sort_keys=True, default=str,
+    )
+    return hashlib.sha1(payload.encode()).hexdigest()
+
+
 def _build_search_body(q: str, level: str, service: str, limit: int) -> dict:
     must: list[dict] = []
     if q:
@@ -83,11 +97,19 @@ class MemoryStore:
 
     def __init__(self, retention_days: int = 7) -> None:
         self._events: list[dict] = []
+        self._ids: set[str] = set()
         self._retention_days = retention_days
 
     async def index(self, events: list[dict]) -> int:
-        self._events.extend(events)
-        return len(events)
+        added = 0
+        for e in events:
+            doc_id = _doc_id(e)
+            if doc_id in self._ids:  # redelivered event — already stored, mirror OpenSearch upsert
+                continue
+            self._ids.add(doc_id)
+            self._events.append(e)
+            added += 1
+        return added
 
     async def search(self, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]:
         out = []
@@ -118,6 +140,7 @@ class MemoryStore:
         cutoff = datetime.now(timezone.utc) - timedelta(days=self._retention_days)
         before = len(self._events)
         self._events = [e for e in self._events if _parse_ts(e["timestamp"]) >= cutoff]
+        self._ids = {_doc_id(e) for e in self._events}
         return before - len(self._events)
 
     async def close(self) -> None:
@@ -155,7 +178,7 @@ class OpenSearchStore:
         from opensearchpy.helpers import async_streaming_bulk
 
         client = await self._get_client()
-        actions = [{"_index": self._index_for(e), "_source": e} for e in events]
+        actions = [{"_index": self._index_for(e), "_id": _doc_id(e), "_source": e} for e in events]
         ok = 0
         failed: list[dict] = []
         # streaming_bulk yields one result per action, in order. raise_on_error=False lets

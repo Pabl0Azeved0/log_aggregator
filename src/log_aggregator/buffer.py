@@ -14,6 +14,7 @@ class BufferFull(Exception):
 class Buffer(Protocol):
     async def publish(self, events: list[dict]) -> None: ...
     async def get_batch(self, max_items: int, timeout_s: float) -> list[dict]: ...
+    async def commit(self) -> None: ...
     async def close(self) -> None: ...
 
 
@@ -44,6 +45,9 @@ class MemoryBuffer:
             except asyncio.QueueEmpty:
                 break
         return batch
+
+    async def commit(self) -> None:
+        return None
 
     async def close(self) -> None:
         return None
@@ -94,13 +98,17 @@ class KafkaBuffer:
                 group_id="indexer",
                 value_deserializer=lambda b: json.loads(b.decode()),
                 auto_offset_reset="earliest",
-                enable_auto_commit=True,
+                enable_auto_commit=False,  # offsets committed only after a batch is indexed
             )
             await self._consumer.start()
         polled = await self._consumer.getmany(
             timeout_ms=int(timeout_s * 1000), max_records=max_items
         )
         return [msg.value for records in polled.values() for msg in records]
+
+    async def commit(self) -> None:
+        if self._consumer is not None:
+            await self._consumer.commit()
 
     async def close(self) -> None:
         if self._producer is not None:

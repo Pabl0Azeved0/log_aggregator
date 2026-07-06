@@ -64,6 +64,9 @@ async def run(buffer: Buffer, store: Store, settings: Settings, once: bool = Fal
         batch = await buffer.get_batch(settings.batch_size, settings.batch_timeout_s)
         if batch:
             indexed_total += await _index_with_retry(store, batch, dead_letter)
+            # commit only after the batch is handled (indexed and/or dead-lettered); a crash
+            # before this re-delivers the batch, and idempotent _id keeps re-indexing safe.
+            await buffer.commit()
         elif once:
             return indexed_total
 

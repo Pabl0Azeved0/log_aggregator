@@ -45,6 +45,25 @@ class Store(Protocol):
     async def close(self) -> None: ...
 
 
+def _build_search_body(q: str, level: str, service: str, limit: int) -> dict:
+    must: list[dict] = []
+    if q:
+        # Phrase-prefix, not a loose `match`: the typed text must appear as a contiguous
+        # phrase (the final word may be a prefix, so type-ahead still works). A plain
+        # `match` OR-tokenises the input, so pasting a log line returned every doc sharing
+        # any single common word.
+        must.append({"match_phrase_prefix": {"message": q}})
+    if level:
+        must.append({"term": {"level": level}})
+    if service:
+        must.append({"term": {"service": service}})
+    return {
+        "query": {"bool": {"must": must}} if must else {"match_all": {}},
+        "sort": [{"timestamp": "desc"}],
+        "size": limit,
+    }
+
+
 async def _aenumerate(aiter, start: int = 0):
     i = start
     async for item in aiter:
@@ -155,22 +174,7 @@ class OpenSearchStore:
 
     async def search(self, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]:
         client = await self._get_client()
-        must: list[dict] = []
-        if q:
-            # Phrase-prefix, not a loose `match`: the typed text must appear as a
-            # contiguous phrase (the final word may be a prefix, so type-ahead still
-            # works). A plain `match` OR-tokenises the input, so pasting a log line
-            # returned every doc sharing any single common word.
-            must.append({"match_phrase_prefix": {"message": q}})
-        if level:
-            must.append({"term": {"level": level}})
-        if service:
-            must.append({"term": {"service": service}})
-        body = {
-            "query": {"bool": {"must": must}} if must else {"match_all": {}},
-            "sort": [{"timestamp": "desc"}],
-            "size": limit,
-        }
+        body = _build_search_body(q, level, service, limit)
         res = await client.search(index="logs-*", body=body, ignore_unavailable=True)
         return [h["_source"] for h in res["hits"]["hits"]]
 

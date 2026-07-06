@@ -21,27 +21,7 @@ def create_app(buffer: Buffer | None = None) -> FastAPI:
             app.state.buffer = make_buffer(get_settings())
         return app.state.buffer
 
-    @app.post("/logs", status_code=202)
-    async def ingest(payload: LogEvent | list[LogEvent]):
-        events = [payload] if isinstance(payload, LogEvent) else payload
-        dumped = [e.model_dump(mode="json") for e in events]
-        try:
-            await _buffer().publish(dumped)
-        except BufferFull:
-            REJECTED.inc(len(dumped))
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "buffer at capacity — retry with backoff"},
-            )
-        INGESTED.inc(len(dumped))
-        return {"accepted": len(dumped)}
-
-    @app.post("/logs/raw", status_code=202)
-    async def ingest_raw(request: Request, service: str = Query(default="unknown")):
-        body = (await request.body()).decode(errors="replace")
-        events = [parse_line(line, service).model_dump(mode="json") for line in body.splitlines() if line.strip()]
-        if not events:
-            return {"accepted": 0}
+    async def _accept(events: list[dict]):
         try:
             await _buffer().publish(events)
         except BufferFull:
@@ -52,6 +32,19 @@ def create_app(buffer: Buffer | None = None) -> FastAPI:
             )
         INGESTED.inc(len(events))
         return {"accepted": len(events)}
+
+    @app.post("/logs", status_code=202)
+    async def ingest(payload: LogEvent | list[LogEvent]):
+        events = [payload] if isinstance(payload, LogEvent) else payload
+        return await _accept([e.model_dump(mode="json") for e in events])
+
+    @app.post("/logs/raw", status_code=202)
+    async def ingest_raw(request: Request, service: str = Query(default="unknown")):
+        body = (await request.body()).decode(errors="replace")
+        events = [parse_line(line, service).model_dump(mode="json") for line in body.splitlines() if line.strip()]
+        if not events:
+            return {"accepted": 0}
+        return await _accept(events)
 
     @app.get("/healthz")
     async def healthz():

@@ -47,6 +47,13 @@ def test_ingest_index_search_roundtrip(tmp_path):
     asyncio.run(flow())
 
 
+def test_ingest_returns_429_on_backpressure():
+    buf = MemoryBuffer(maxsize=1)  # a 2-event batch overflows it
+    ingest = TestClient(create_ingest_app(buffer=buf))
+    r = ingest.post("/logs", json=[{"message": "a"}, {"message": "b"}])
+    assert r.status_code == 429
+
+
 def test_backpressure_raises_buffer_full():
     async def flow():
         buf = MemoryBuffer(maxsize=2)

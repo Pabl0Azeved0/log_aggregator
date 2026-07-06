@@ -10,3 +10,6 @@ dead_letter/
 # Allow commit only to README file, every other md file kept local
 *.md
 !README.md
+
+# local port-remap override (host 8000 taken by another project)
+docker-compose.override.yml

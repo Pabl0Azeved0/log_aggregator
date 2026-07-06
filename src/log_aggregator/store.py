@@ -121,7 +121,11 @@ class OpenSearchStore:
         client = await self._get_client()
         must: list[dict] = []
         if q:
-            must.append({"match": {"message": q}})
+            # Phrase-prefix, not a loose `match`: the typed text must appear as a
+            # contiguous phrase (the final word may be a prefix, so type-ahead still
+            # works). A plain `match` OR-tokenises the input, so pasting a log line
+            # returned every doc sharing any single common word.
+            must.append({"match_phrase_prefix": {"message": q}})
         if level:
             must.append({"term": {"level": level}})
         if service:

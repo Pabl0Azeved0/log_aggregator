@@ -68,8 +68,10 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
 
 - **Backpressure is explicit:** when the buffer can't keep up the ingest API returns
   `429` instead of buffering unboundedly.
-- **At-least-once delivery:** Kafka consumer auto-commit; duplicates are possible on
-  indexer restart — dedup is a documented v2 item, not silently claimed.
+- **Effectively-once delivery:** the consumer commits offsets only after a batch is
+  indexed, and every document is written under a content-derived `_id`, so a redelivered
+  event overwrites rather than duplicates. Verified by rewinding the consumer-group
+  offset to force redelivery — the document count stays flat.
 - **Failures are kept:** batches that exhaust indexing retries land in a JSONL
   dead-letter file for inspection, not dropped.
 - **Retention:** one index per day, deleted after `RETENTION_DAYS`.
@@ -79,9 +81,9 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
 ## Limitations (v1, honest)
 
 Single-node Kafka and OpenSearch (throughput ceiling is the machine, not the design);
-no auth on the APIs; no exactly-once semantics; retention is delete-only.
+no auth on the APIs; retention is delete-only.
 
 ## Roadmap (v2+)
 
 Alerting rules · shipper agents/sidecars · multi-tenant auth · Kubernetes manifests ·
-exactly-once via manual offset commit tied to bulk-index success.
+long-term retention to object storage.

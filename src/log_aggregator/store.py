@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from log_aggregator.config import Settings
+
+_STATS_TTL_S = 1.0  # dashboards poll /stats every 1.5s; collapse duplicate aggregations
 
 _TEMPLATE = {
     "index_patterns": ["logs-*"],
@@ -112,6 +115,8 @@ class OpenSearchStore:
         self._retention_days = retention_days
         self._client = None
         self._template_done = False
+        self._stats_cache: dict | None = None
+        self._stats_at = 0.0
 
     async def _get_client(self):
         if self._client is None:
@@ -175,6 +180,9 @@ class OpenSearchStore:
         return res.get("count", 0)
 
     async def stats(self) -> dict:
+        now = time.monotonic()
+        if self._stats_cache is not None and now - self._stats_at < _STATS_TTL_S:
+            return self._stats_cache
         client = await self._get_client()
         body = {
             "size": 0,
@@ -186,11 +194,14 @@ class OpenSearchStore:
         }
         res = await client.search(index="logs-*", body=body, ignore_unavailable=True)
         aggs = res.get("aggregations", {})
-        return {
+        result = {
             "total": res["hits"]["total"]["value"],
             "by_level": {b["key"]: b["doc_count"] for b in aggs.get("by_level", {}).get("buckets", [])},
             "by_service": {b["key"]: b["doc_count"] for b in aggs.get("by_service", {}).get("buckets", [])},
         }
+        self._stats_cache = result
+        self._stats_at = now
+        return result
 
     async def apply_retention(self) -> int:
         client = await self._get_client()

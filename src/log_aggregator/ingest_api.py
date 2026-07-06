@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
@@ -13,7 +15,14 @@ REJECTED = Counter("rejected_events_total", "Events rejected by backpressure")
 
 
 def create_app(buffer: Buffer | None = None) -> FastAPI:
-    app = FastAPI(title="log-aggregator ingest")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        # flush the producer's linger window on SIGTERM instead of dropping it
+        if app.state.buffer is not None:
+            await app.state.buffer.close()
+
+    app = FastAPI(title="log-aggregator ingest", lifespan=lifespan)
     app.state.buffer = buffer
 
     def _buffer() -> Buffer:

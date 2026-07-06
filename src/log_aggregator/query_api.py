@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,7 +13,13 @@ _DASHBOARD = Path(__file__).parent / "static" / "dashboard.html"
 
 
 def create_app(store: Store | None = None) -> FastAPI:
-    app = FastAPI(title="log-aggregator query")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        if app.state.store is not None:
+            await app.state.store.close()
+
+    app = FastAPI(title="log-aggregator query", lifespan=lifespan)
     app.state.store = store
 
     def _store() -> Store:

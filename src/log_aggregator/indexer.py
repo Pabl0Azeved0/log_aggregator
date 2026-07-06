@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import signal
 import time
 from pathlib import Path
 
@@ -67,13 +68,29 @@ async def run(buffer: Buffer, store: Store, settings: Settings, once: bool = Fal
             return indexed_total
 
 
+async def _serve(buffer: Buffer, store: Store, settings: Settings) -> None:
+    """Run the loop until cancelled by SIGTERM/SIGINT, then close the buffer and store
+    so in-flight offsets/clients shut down cleanly."""
+    loop = asyncio.get_running_loop()
+    task = asyncio.ensure_future(run(buffer, store, settings))
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, task.cancel)
+    try:
+        await task
+    except asyncio.CancelledError:
+        log.info("indexer shutting down")
+    finally:
+        await buffer.close()
+        await store.close()
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     settings = get_settings()
     buffer = make_buffer(settings)
     store = make_store(settings)
     log.info("indexer starting: buffer=%s store=%s", settings.buffer_backend, settings.store_backend)
-    asyncio.run(run(buffer, store, settings))
+    asyncio.run(_serve(buffer, store, settings))
 
 
 if __name__ == "__main__":

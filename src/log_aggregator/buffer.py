@@ -59,19 +59,30 @@ class KafkaBuffer:
         self._topic = topic
         self._producer = None
         self._consumer = None
+        self._producer_lock = asyncio.Lock()
+
+    async def _get_producer(self):
+        # double-checked lock: concurrent first publishes must not each build a producer,
+        # nor send on one that another coroutine is still awaiting start() on. _producer is
+        # published only after start() completes, so a non-None value is always ready.
+        if self._producer is None:
+            async with self._producer_lock:
+                if self._producer is None:
+                    from aiokafka import AIOKafkaProducer
+
+                    producer = AIOKafkaProducer(
+                        bootstrap_servers=self._bootstrap,
+                        value_serializer=lambda v: json.dumps(v).encode(),
+                        linger_ms=5,
+                    )
+                    await producer.start()
+                    self._producer = producer
+        return self._producer
 
     async def publish(self, events: list[dict]) -> None:
-        if self._producer is None:
-            from aiokafka import AIOKafkaProducer
-
-            self._producer = AIOKafkaProducer(
-                bootstrap_servers=self._bootstrap,
-                value_serializer=lambda v: json.dumps(v).encode(),
-                linger_ms=5,
-            )
-            await self._producer.start()
+        producer = await self._get_producer()
         for e in events:
-            await self._producer.send(self._topic, e)
+            await producer.send(self._topic, e)
 
     async def get_batch(self, max_items: int, timeout_s: float) -> list[dict]:
         if self._consumer is None:

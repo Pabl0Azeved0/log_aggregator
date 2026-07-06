@@ -34,7 +34,10 @@ services:
 
   ingest:
     build: .
-    command: uvicorn log_aggregator.ingest_api:app --host 0.0.0.0 --port 8000 --workers 2
+    # single worker so the in-process Prometheus counters at /metrics are exact; the
+    # throughput ceiling is the load generator (single connection), not this process —
+    # scale out with multiple ingest replicas behind the same Kafka when needed.
+    command: uvicorn log_aggregator.ingest_api:app --host 0.0.0.0 --port 8000 --workers 1
     environment:
       BUFFER_BACKEND: kafka
       KAFKA_BOOTSTRAP: kafka:9092

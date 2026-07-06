@@ -6,3 +6,7 @@ __pycache__/
 .env
 dead_letter/
 *.egg-info/
+
+# Allow commit only to README file, every other md file kept local
+*.md
+!README.md

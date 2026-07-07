@@ -68,6 +68,23 @@ services:
       minio:
         condition: service_healthy
 
+  alerting:
+    build: .
+    command: python -m log_aggregator.alerting
+    environment:
+      BUFFER_BACKEND: kafka
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP: alerting          # own consumer group — reads independently of the indexer
+      STORE_BACKEND: opensearch
+      OPENSEARCH_URL: http://opensearch:9200
+      ALERT_RULES: '[{"name":"error-burst","level":"ERROR","threshold":500,"window_s":10,"cooldown_s":30}]'
+      # ALERT_WEBHOOK: https://hooks.slack.com/services/...   # console log when unset
+    depends_on:
+      kafka:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+
   query:
     build: .
     command: uvicorn log_aggregator.query_api:app --host 0.0.0.0 --port 8080

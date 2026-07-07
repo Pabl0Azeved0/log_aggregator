@@ -6,7 +6,8 @@ from __future__ import annotations
 import asyncio
 import gzip
 
-from log_aggregator.store import ArchiveConfig, OpenSearchStore, _build_search_body
+from log_aggregator.adapters.archive import ArchiveConfig
+from log_aggregator.adapters.opensearch_store import OpenSearchStore, _build_search_body
 
 
 class _FakeIndices:
@@ -105,16 +106,18 @@ def test_restore_reindexes_from_archive():
     line = b'{"timestamp":"2020-01-01T00:00:00Z","service":"a","level":"INFO","message":"m","attrs":{}}\n'
     reindexed: list = []
 
-    class RestoreStore(OpenSearchStore):
-        def _fetch(self, key):
+    class FakeArchive:
+        def fetch(self, key):
             assert key == "logs-2020.01.01.jsonl.gz"
             return gzip.compress(line)
 
+    class RestoreStore(OpenSearchStore):
         async def index(self, events):
             reindexed.extend(events)
             return len(events)
 
     store = RestoreStore("http://opensearch:9200", 7, _archive_cfg(True))
+    store._s3_archive = FakeArchive()  # inject the object-store seam
 
     async def flow():
         n = await store.restore("logs-2020.01.01")

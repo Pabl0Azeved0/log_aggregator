@@ -12,7 +12,7 @@ from log_aggregator.config import Settings
 from log_aggregator.ingest_api import create_app as create_ingest_app
 from log_aggregator.query_api import create_app as create_query_app
 from log_aggregator.security import mint_jwt, parse_api_keys, verify_jwt
-from log_aggregator.store import MemoryStore
+from log_aggregator.adapters.memory_store import MemoryStore
 
 
 def _auth_settings():

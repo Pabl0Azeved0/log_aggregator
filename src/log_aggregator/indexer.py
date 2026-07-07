@@ -15,8 +15,10 @@ import time
 from pathlib import Path
 
 from log_aggregator.buffer import Buffer, make_buffer
+from log_aggregator.composition import make_store
 from log_aggregator.config import Settings, get_settings
-from log_aggregator.store import PartialIndexError, Store, make_store
+from log_aggregator.domain.errors import PartialIndexError
+from log_aggregator.ports.store import Store
 
 log = logging.getLogger("indexer")
 

@@ -15,7 +15,7 @@ from log_aggregator.config import Settings
 from log_aggregator.ingest_api import create_app as create_ingest_app
 from log_aggregator.models import LogEvent
 from log_aggregator.query_api import create_app as create_query_app
-from log_aggregator.store import MemoryStore
+from log_aggregator.adapters.memory_store import MemoryStore
 
 
 def _settings() -> Settings:
@@ -122,7 +122,7 @@ def test_indexer_commits_after_batch(tmp_path):
 
 
 def test_partial_index_failure_dead_letters_only_rejected(tmp_path):
-    from log_aggregator.store import PartialIndexError
+    from log_aggregator.domain.errors import PartialIndexError
 
     class PartialStore(MemoryStore):
         async def index(self, events):

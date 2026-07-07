@@ -18,8 +18,9 @@ from datetime import datetime, timezone
 import httpx
 
 from log_aggregator.buffer import Buffer, make_buffer
+from log_aggregator.composition import make_store
 from log_aggregator.config import Settings, get_settings
-from log_aggregator.store import Store, make_store
+from log_aggregator.ports.store import Store
 
 log = logging.getLogger("alerting")
 

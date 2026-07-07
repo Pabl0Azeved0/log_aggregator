@@ -77,14 +77,18 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
 - **Tiered retention:** one index per day; after `RETENTION_DAYS` an expiring index is
   exported to object storage (S3/MinIO) as gzipped JSONL, then deleted — not lost.
   `OpenSearchStore.restore()` re-indexes an archived day back on demand (idempotent).
+- **Multi-tenant auth:** set `AUTH_ENABLED=true` and `API_KEYS="key1:tenantA,key2:tenantB"`.
+  Producers send `Authorization: Bearer <api-key>`; the dashboard exchanges a key for a
+  short-lived JWT via `POST /auth/token`. Each tenant's data lives in its own indices
+  (`logs-<tenant>-*`) and reads are scoped to the caller — no cross-tenant access. Off by
+  default (single `default` tenant, open APIs) so local dev and `make loadgen` need no keys.
 - Offline tests exercise the exact pipeline with in-memory buffer/store fakes — no
   containers needed for `make test`.
 
 ## Limitations (v1, honest)
 
-Single-node Kafka and OpenSearch (throughput ceiling is the machine, not the design);
-no auth on the APIs.
+Single-node Kafka and OpenSearch (throughput ceiling is the machine, not the design).
 
 ## Roadmap (v2+)
 
-Alerting rules · shipper agents/sidecars · multi-tenant auth · Kubernetes manifests.
+Alerting rules · shipper agents/sidecars · Kubernetes manifests.

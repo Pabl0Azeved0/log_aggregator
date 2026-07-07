@@ -1,12 +1,27 @@
 from __future__ import annotations
 
+import asyncio
+import gzip
 import hashlib
+import io
 import json
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from log_aggregator.config import Settings
+
+
+@dataclass
+class ArchiveConfig:
+    """Where expiring indices are exported before deletion (S3-compatible object store)."""
+
+    enabled: bool
+    bucket: str
+    endpoint: str
+    access_key: str
+    secret_key: str
 
 _STATS_TTL_S = 1.0  # dashboards poll /stats every 1.5s; collapse duplicate aggregations
 
@@ -152,10 +167,12 @@ class OpenSearchStore:
     with typed mappings applied lazily once, bulk indexing, and delete-old-indices
     retention."""
 
-    def __init__(self, url: str, retention_days: int) -> None:
+    def __init__(self, url: str, retention_days: int, archive: ArchiveConfig | None = None) -> None:
         self._url = url
         self._retention_days = retention_days
+        self._archive = archive
         self._client = None
+        self._s3_client = None
         self._template_done = False
         self._stats_cache: dict | None = None
         self._stats_at = 0.0
@@ -234,16 +251,62 @@ class OpenSearchStore:
         client = await self._get_client()
         cutoff = datetime.now(timezone.utc) - timedelta(days=self._retention_days)
         indices = await client.indices.get(index="logs-*", ignore_unavailable=True)
-        deleted = 0
+        removed = 0
         for name in list(indices):
             try:
                 day = datetime.strptime(name.removeprefix("logs-"), "%Y.%m.%d").replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
             if day < cutoff:
+                if self._archive is not None and self._archive.enabled:
+                    await self._archive_index(name)  # export to object storage first
                 await client.indices.delete(index=name)
-                deleted += 1
-        return deleted
+                removed += 1
+        return removed
+
+    # --- object-storage archival ---------------------------------------------------
+
+    def _s3(self):
+        if self._s3_client is None:
+            import boto3
+
+            self._s3_client = boto3.client(
+                "s3",
+                endpoint_url=self._archive.endpoint,
+                aws_access_key_id=self._archive.access_key,
+                aws_secret_access_key=self._archive.secret_key,
+                region_name="us-east-1",
+            )
+        return self._s3_client
+
+    def _put(self, key: str, data: bytes) -> None:
+        s3 = self._s3()
+        try:
+            s3.head_bucket(Bucket=self._archive.bucket)
+        except Exception:
+            s3.create_bucket(Bucket=self._archive.bucket)
+        s3.put_object(Bucket=self._archive.bucket, Key=key, Body=data)
+
+    def _fetch(self, key: str) -> bytes:
+        return self._s3().get_object(Bucket=self._archive.bucket, Key=key)["Body"].read()
+
+    async def _archive_index(self, name: str) -> None:
+        """Export every document of `name` as gzipped JSONL to the object store."""
+        from opensearchpy.helpers import async_scan
+
+        client = await self._get_client()
+        buf = io.BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
+            async for doc in async_scan(client, index=name, query={"query": {"match_all": {}}}):
+                gz.write((json.dumps(doc["_source"]) + "\n").encode())
+        await asyncio.to_thread(self._put, f"{name}.jsonl.gz", buf.getvalue())
+
+    async def restore(self, name: str) -> int:
+        """Restore an archived index back into `logs-*` from object storage. Re-indexing is
+        idempotent (content-derived `_id`), so restoring twice is safe."""
+        data = await asyncio.to_thread(self._fetch, f"{name}.jsonl.gz")
+        events = [json.loads(line) for line in gzip.decompress(data).decode().splitlines() if line.strip()]
+        return await self.index(events)
 
     async def close(self) -> None:
         if self._client is not None:
@@ -253,4 +316,11 @@ class OpenSearchStore:
 def make_store(settings: Settings) -> Store:
     if settings.store_backend == "memory":
         return MemoryStore(settings.retention_days)
-    return OpenSearchStore(settings.opensearch_url, settings.retention_days)
+    archive = ArchiveConfig(
+        enabled=settings.archive_enabled,
+        bucket=settings.archive_bucket,
+        endpoint=settings.s3_endpoint,
+        access_key=settings.s3_access_key,
+        secret_key=settings.s3_secret_key,
+    )
+    return OpenSearchStore(settings.opensearch_url, settings.retention_days, archive)

@@ -53,11 +53,14 @@ class PartialIndexError(Exception):
         self.failed = failed
 
 
+_DEFAULT_TENANT = "default"
+
+
 class Store(Protocol):
     async def index(self, events: list[dict]) -> int: ...
-    async def search(self, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]: ...
-    async def count(self) -> int: ...
-    async def stats(self) -> dict: ...
+    async def search(self, tenant: str = _DEFAULT_TENANT, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]: ...
+    async def count(self, tenant: str = _DEFAULT_TENANT) -> int: ...
+    async def stats(self, tenant: str = _DEFAULT_TENANT) -> dict: ...
     async def apply_retention(self) -> int: ...
     async def close(self) -> None: ...
 
@@ -67,8 +70,8 @@ def _doc_id(event: dict) -> str:
     (effectively-once) instead of creating a duplicate. The timestamp is set once at ingest
     and carried through Kafka, so a redelivered event hashes to the same id."""
     payload = json.dumps(
-        [event.get("timestamp"), event.get("service"), event.get("level"),
-         event.get("message"), event.get("attrs")],
+        [event.get("tenant"), event.get("timestamp"), event.get("service"),
+         event.get("level"), event.get("message"), event.get("attrs")],
         sort_keys=True, default=str,
     )
     return hashlib.sha1(payload.encode()).hexdigest()
@@ -126,9 +129,11 @@ class MemoryStore:
             added += 1
         return added
 
-    async def search(self, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]:
+    async def search(self, tenant: str = _DEFAULT_TENANT, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]:
         out = []
         for e in reversed(self._events):
+            if e.get("tenant", _DEFAULT_TENANT) != tenant:
+                continue
             if q and q.lower() not in str(e.get("message", "")).lower():
                 continue
             if level and e.get("level") != level:
@@ -140,16 +145,20 @@ class MemoryStore:
                 break
         return out
 
-    async def count(self) -> int:
-        return len(self._events)
+    async def count(self, tenant: str = _DEFAULT_TENANT) -> int:
+        return sum(1 for e in self._events if e.get("tenant", _DEFAULT_TENANT) == tenant)
 
-    async def stats(self) -> dict:
+    async def stats(self, tenant: str = _DEFAULT_TENANT) -> dict:
         by_level: dict[str, int] = {}
         by_service: dict[str, int] = {}
+        total = 0
         for e in self._events:
+            if e.get("tenant", _DEFAULT_TENANT) != tenant:
+                continue
+            total += 1
             by_level[e.get("level", "INFO")] = by_level.get(e.get("level", "INFO"), 0) + 1
             by_service[e.get("service", "unknown")] = by_service.get(e.get("service", "unknown"), 0) + 1
-        return {"total": len(self._events), "by_level": by_level, "by_service": by_service}
+        return {"total": total, "by_level": by_level, "by_service": by_service}
 
     async def apply_retention(self) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(days=self._retention_days)
@@ -174,8 +183,7 @@ class OpenSearchStore:
         self._client = None
         self._s3_client = None
         self._template_done = False
-        self._stats_cache: dict | None = None
-        self._stats_at = 0.0
+        self._stats_cache: dict[str, tuple[dict, float]] = {}  # per-tenant
 
     async def _get_client(self):
         if self._client is None:
@@ -189,7 +197,8 @@ class OpenSearchStore:
 
     @staticmethod
     def _index_for(event: dict) -> str:
-        return "logs-" + _parse_ts(event["timestamp"]).strftime("%Y.%m.%d")
+        tenant = event.get("tenant", _DEFAULT_TENANT)
+        return f"logs-{tenant}-" + _parse_ts(event["timestamp"]).strftime("%Y.%m.%d")
 
     async def index(self, events: list[dict]) -> int:
         from opensearchpy.helpers import async_streaming_bulk
@@ -212,21 +221,22 @@ class OpenSearchStore:
             raise PartialIndexError(ok, failed)
         return ok
 
-    async def search(self, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]:
+    async def search(self, tenant: str = _DEFAULT_TENANT, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]:
         client = await self._get_client()
         body = _build_search_body(q, level, service, limit)
-        res = await client.search(index="logs-*", body=body, ignore_unavailable=True)
+        res = await client.search(index=f"logs-{tenant}-*", body=body, ignore_unavailable=True)
         return [h["_source"] for h in res["hits"]["hits"]]
 
-    async def count(self) -> int:
+    async def count(self, tenant: str = _DEFAULT_TENANT) -> int:
         client = await self._get_client()
-        res = await client.count(index="logs-*", ignore_unavailable=True)
+        res = await client.count(index=f"logs-{tenant}-*", ignore_unavailable=True)
         return res.get("count", 0)
 
-    async def stats(self) -> dict:
+    async def stats(self, tenant: str = _DEFAULT_TENANT) -> dict:
         now = time.monotonic()
-        if self._stats_cache is not None and now - self._stats_at < _STATS_TTL_S:
-            return self._stats_cache
+        cached = self._stats_cache.get(tenant)
+        if cached is not None and now - cached[1] < _STATS_TTL_S:
+            return cached[0]
         client = await self._get_client()
         body = {
             "size": 0,
@@ -236,15 +246,14 @@ class OpenSearchStore:
                 "by_service": {"terms": {"field": "service"}},
             },
         }
-        res = await client.search(index="logs-*", body=body, ignore_unavailable=True)
+        res = await client.search(index=f"logs-{tenant}-*", body=body, ignore_unavailable=True)
         aggs = res.get("aggregations", {})
         result = {
             "total": res["hits"]["total"]["value"],
             "by_level": {b["key"]: b["doc_count"] for b in aggs.get("by_level", {}).get("buckets", [])},
             "by_service": {b["key"]: b["doc_count"] for b in aggs.get("by_service", {}).get("buckets", [])},
         }
-        self._stats_cache = result
-        self._stats_at = now
+        self._stats_cache[tenant] = (result, now)
         return result
 
     async def apply_retention(self) -> int:
@@ -253,8 +262,8 @@ class OpenSearchStore:
         indices = await client.indices.get(index="logs-*", ignore_unavailable=True)
         removed = 0
         for name in list(indices):
-            try:
-                day = datetime.strptime(name.removeprefix("logs-"), "%Y.%m.%d").replace(tzinfo=timezone.utc)
+            try:  # date is the last dash-segment: logs-<tenant>-YYYY.MM.DD (and legacy logs-YYYY.MM.DD)
+                day = datetime.strptime(name.rsplit("-", 1)[-1], "%Y.%m.%d").replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
             if day < cutoff:

@@ -24,6 +24,7 @@ class LogEvent(BaseModel):
     service: str = "unknown"
     message: str
     attrs: dict[str, Any] = {}
+    tenant: str = "default"  # set by the ingest API from the caller's credential
 
     @field_validator("level")
     @classmethod

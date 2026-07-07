@@ -7,7 +7,7 @@ import asyncio
 
 from log_aggregator import alerting
 from log_aggregator.alerting import Rule, RuleEngine, load_rules
-from log_aggregator.buffer import MemoryBuffer
+from log_aggregator.adapters.memory_buffer import MemoryBuffer
 from log_aggregator.models import LogEvent
 from log_aggregator.adapters.memory_store import MemoryStore
 

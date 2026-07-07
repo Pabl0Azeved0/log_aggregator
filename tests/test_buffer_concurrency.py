@@ -7,7 +7,7 @@ import asyncio
 
 import aiokafka
 
-from log_aggregator.buffer import KafkaBuffer
+from log_aggregator.adapters.kafka_buffer import KafkaBuffer
 
 
 def test_producer_started_once_and_never_used_before_start(monkeypatch):

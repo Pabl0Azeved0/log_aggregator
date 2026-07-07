@@ -10,7 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from log_aggregator import indexer
-from log_aggregator.buffer import BufferFull, MemoryBuffer
+from log_aggregator.adapters.memory_buffer import MemoryBuffer
+from log_aggregator.domain.errors import BufferFull
 from log_aggregator.config import Settings
 from log_aggregator.ingest_api import create_app as create_ingest_app
 from log_aggregator.models import LogEvent

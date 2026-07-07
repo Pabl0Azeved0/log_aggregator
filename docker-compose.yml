@@ -97,6 +97,29 @@ services:
       opensearch:
         condition: service_healthy
 
+  # --- shipper sidecar demo (opt-in): `docker compose --profile sidecar up -d` ---
+  demo-app:
+    build: .
+    command: python scripts/demo_app.py
+    environment:
+      DEMO_LOG: /shared/app.log
+    volumes:
+      - shared-logs:/shared
+    profiles: ["sidecar"]
+
+  agent:
+    build: .
+    command: python -m log_aggregator.agent
+    environment:
+      INGEST_URL: http://ingest:8000
+      AGENT_FILE: /shared/app.log
+      AGENT_SERVICE: demo-app
+    volumes:
+      - shared-logs:/shared
+    depends_on:
+      - ingest
+    profiles: ["sidecar"]
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -117,3 +140,4 @@ services:
 volumes:
   osdata:
   miniodata:
+  shared-logs:

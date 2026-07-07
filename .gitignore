@@ -7,9 +7,10 @@ __pycache__/
 dead_letter/
 *.egg-info/
 
-# Allow commit only to README file, every other md file kept local
+# Public docs are tracked; planning/notes md files stay local
 *.md
 !README.md
+!ARCHITECTURE.md
 
 # local port-remap override (host 8000 taken by another project)
 docker-compose.override.yml

@@ -82,6 +82,12 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
   short-lived JWT via `POST /auth/token`. Each tenant's data lives in its own indices
   (`logs-<tenant>-*`) and reads are scoped to the caller — no cross-tenant access. Off by
   default (single `default` tenant, open APIs) so local dev and `make loadgen` need no keys.
+- **Alerting:** a separate `alerting` worker consumes the same stream on its **own consumer
+  group** (independent of the indexer) and evaluates threshold rules over sliding windows,
+  per `(tenant, rule)`, with a cooldown so one incident isn't a thousand alerts. Fired
+  alerts POST to a Slack-compatible `ALERT_WEBHOOK` (console when unset) and surface on the
+  dashboard via `GET /alerts`. Rules are JSON in `ALERT_RULES`, e.g.
+  `[{"name":"error-burst","level":"ERROR","threshold":500,"window_s":10,"cooldown_s":30}]`.
 - Offline tests exercise the exact pipeline with in-memory buffer/store fakes — no
   containers needed for `make test`.
 
@@ -91,4 +97,4 @@ Single-node Kafka and OpenSearch (throughput ceiling is the machine, not the des
 
 ## Roadmap (v2+)
 
-Alerting rules · shipper agents/sidecars · Kubernetes manifests.
+Shipper agents/sidecars · Kubernetes manifests.

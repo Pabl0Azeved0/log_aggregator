@@ -67,6 +67,10 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
 - **The ingest API sustains 30k+ events/s at p99 ≤ 26 ms.** The ~32k plateau at the top
   is the load generator itself (single sequential client), **not** a proven server
   ceiling; a concurrent generator is on the roadmap to push past it.
+- **Multi-node (Kubernetes):** the `k8s/` manifests scale ingest (HPA) and indexer (one
+  replica per Kafka partition) across a 3-broker Kafka + 3-node OpenSearch cluster. A
+  measured throughput row for that topology is **pending a real-cluster run** — not
+  claimed here, in keeping with the rule above.
 
 ## Design notes
 
@@ -96,13 +100,21 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
   `/logs/raw`, **honoring backpressure** — a `429` is retried with exponential backoff, never
   dropped — and reopening on truncation/rotation. Run the bundled demo with
   `docker compose --profile sidecar up -d` (a fake app + the agent shipping its logs).
+- **Kubernetes:** `k8s/` holds Kustomize manifests for a multi-node deployment — 3-broker
+  Kafka, 3-node OpenSearch, ingest behind an HPA, one indexer per partition — that closes
+  the single-node ceiling below. `kubectl apply -k k8s/` (see `k8s/README.md`).
 - Offline tests exercise the exact pipeline with in-memory buffer/store fakes — no
   containers needed for `make test`.
 
-## Limitations (v1, honest)
+## Limitations (honest)
 
-Single-node Kafka and OpenSearch (throughput ceiling is the machine, not the design).
+The **Docker Compose** demo is single-node (throughput ceiling is the machine, not the
+design). The **Kubernetes** manifests (`k8s/`) run multi-node Kafka + OpenSearch and scale
+ingest/indexer horizontally; they are schema-validated but a live-cluster throughput
+measurement is still pending (no multi-node number is claimed until measured).
 
-## Roadmap (v2+)
+## Roadmap
 
-Kubernetes manifests (multi-node Kafka + OpenSearch, HPA).
+v2 delivered: effectively-once delivery · tiered object-storage retention · multi-tenant
+auth · alerting · shipper agent · Kubernetes manifests. Next: a concurrent load generator
+and a measured multi-node run; exactly-once producer path; OpenSearch security (TLS + auth).

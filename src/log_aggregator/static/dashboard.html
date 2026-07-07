@@ -212,6 +212,18 @@
   .skel { height: 15px; border-radius: 5px; background: linear-gradient(90deg, #1a1b20, #212228, #1a1b20); background-size: 200% 100%; animation: shimmer 1.3s infinite; }
   @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
+  /* auth login overlay (only shown when the API returns 401) */
+  .overlay { position: fixed; inset: 0; z-index: 100; display: none; place-items: center;
+    background: rgba(6,7,9,.72); backdrop-filter: blur(4px); }
+  .overlay.show { display: grid; }
+  .login { width: 320px; max-width: 90vw; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
+  .login h2 { margin: 0 0 4px; font-size: 15px; }
+  .login p { margin: 0 0 16px; font-size: 12.5px; color: var(--muted); }
+  .login input { width: 100%; margin-bottom: 12px; }
+  .login .btn { width: 100%; justify-content: center; }
+  .login .err { color: var(--error); font-size: 12px; margin-top: 10px; min-height: 14px; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   }
@@ -303,12 +315,36 @@
   </section>
 </main>
 
+<div class="overlay" id="overlay">
+  <form class="login" id="login-form">
+    <h2>Sign in</h2>
+    <p>Enter your API key to view logs.</p>
+    <input type="password" id="apikey" placeholder="API key" autocomplete="off" aria-label="API key">
+    <button class="btn" type="submit">Continue</button>
+    <div class="err" id="login-err"></div>
+  </form>
+</div>
 <script>
   const LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
   const LVL_COLOR = { DEBUG: "#6b7280", INFO: "#38bdf8", WARNING: "#fbbf24", ERROR: "#f87171", CRITICAL: "#fb7185" };
   const $ = id => document.getElementById(id);
   const fmt = n => (n == null ? "—" : n.toLocaleString("en-US"));
   const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  let token = localStorage.getItem("la_token") || "";
+  const authHeaders = () => token ? { Authorization: "Bearer " + token } : {};
+
+  async function api(path) {
+    const r = await fetch(path, { headers: authHeaders() });
+    if (r.status === 401) {
+      token = ""; localStorage.removeItem("la_token");
+      live = false; $("live").setAttribute("aria-pressed", "false");  // stop hammering until sign-in
+      $("overlay").classList.add("show");
+      throw new Error("unauthorized");
+    }
+    if (!r.ok) throw new Error("http " + r.status);
+    return r.json();
+  }
 
   let live = true, seen = new Set(), first = true;
   let lastTotal = null, lastAt = null, rateEwma = null, inflight = false;
@@ -405,10 +441,7 @@
     if (inflight) return;
     inflight = true;
     try {
-      const [hits, stats] = await Promise.all([
-        fetch("/search?" + params()).then(r => { if (!r.ok) throw 0; return r.json(); }),
-        fetch("/stats").then(r => { if (!r.ok) throw 0; return r.json(); }),
-      ]);
+      const [hits, stats] = await Promise.all([api("/search?" + params()), api("/stats")]);
       renderStats(stats);
       renderRows(hits);
       const filtered = $("q").value || $("level").value || $("service").value;
@@ -420,6 +453,19 @@
       inflight = false;
     }
   }
+
+  // auth login (overlay appears only when the API returns 401)
+  $("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const r = await fetch("/auth/token", { method: "POST", headers: { "X-API-Key": $("apikey").value.trim() } });
+    if (!r.ok) { $("login-err").textContent = "Invalid API key"; return; }
+    token = (await r.json()).token;
+    localStorage.setItem("la_token", token);
+    $("login-err").textContent = ""; $("apikey").value = "";
+    $("overlay").classList.remove("show");
+    live = true; $("live").setAttribute("aria-pressed", "true");
+    refresh();
+  });
 
   // interactions
   let deb;

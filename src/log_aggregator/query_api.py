@@ -46,6 +46,10 @@ def create_app(store: Store | None = None, settings: Settings | None = None) -> 
     async def stats(tenant: str = Depends(require_tenant)):
         return await _store().stats(tenant)
 
+    @app.get("/alerts")
+    async def alerts(tenant: str = Depends(require_tenant)):
+        return await _store().recent_alerts(tenant)
+
     @app.get("/healthz")
     async def healthz():
         return {"status": "ok"}

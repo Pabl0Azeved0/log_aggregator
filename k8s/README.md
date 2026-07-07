@@ -53,8 +53,11 @@ kubectl -n log-aggregator port-forward svc/query 8080:8080   # http://localhost:
   **OpenSearch Operator** — which handle rebalancing, rolling upgrades, and storage.
 - **Security:** OpenSearch runs with the security plugin disabled and Kafka as PLAINTEXT for
   the demo; enable TLS + auth before exposing anything.
-- **Validation status:** these manifests are schema-shaped and reviewed but were authored
-  without a live cluster in this environment; validate with `kubectl apply --dry-run=server -k k8s/`
-  (or `kubeconform`) and a smoke deploy on kind/minikube before relying on them. The
-  multi-node throughput figure for the main README is **pending a real cluster run** — no
-  number is claimed until measured.
+- **Validation status:** `kubectl kustomize k8s/` renders cleanly (20 resources, no
+  warnings) and a structural pass confirms apiVersions, namespace/label propagation,
+  selector↔template consistency, resource blocks, and that every Service/HPA/Ingress
+  reference resolves. Still recommended before relying on these: JSON-schema validation
+  (`kubectl kustomize k8s/ | kubeconform -strict -summary`), a server dry-run against a
+  real cluster (`kubectl apply --dry-run=server -k k8s/`), and a kind/minikube smoke
+  deploy. The multi-node throughput figure for the main README is **pending a real cluster
+  run** — no number is claimed until measured.

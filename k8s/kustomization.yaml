@@ -3,8 +3,10 @@ kind: Kustomization
 
 namespace: log-aggregator
 
-commonLabels:
-  app.kubernetes.io/part-of: log-aggregator
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: log-aggregator
+    includeSelectors: false
 
 resources:
   - 00-namespace.yaml

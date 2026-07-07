@@ -65,6 +65,12 @@ spec:
               port: 9000
             initialDelaySeconds: 10
             periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: 256Mi
+            limits:
+              memory: 512Mi
       volumes:
         - name: data
           persistentVolumeClaim:

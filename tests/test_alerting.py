@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import asyncio
 
-from log_aggregator import alerting
+from log_aggregator.workers import alerting
 from log_aggregator.adapters.memory_buffer import MemoryBuffer
 from log_aggregator.adapters.memory_store import MemoryStore
 from log_aggregator.domain.rules import Rule, RuleEngine, load_rules
-from log_aggregator.models import LogEvent
+from log_aggregator.domain.models import LogEvent
 
 
 def _err(tenant="default", service="checkout"):

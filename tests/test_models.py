@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from log_aggregator.models import LogEvent, parse_line
+from log_aggregator.domain.models import LogEvent, parse_line
 
 
 def test_json_line_parses_onto_schema():

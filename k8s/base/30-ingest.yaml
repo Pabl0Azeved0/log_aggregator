@@ -16,7 +16,7 @@ spec:
         - name: ingest
           image: log-aggregator:latest
           imagePullPolicy: IfNotPresent
-          command: ["uvicorn", "log_aggregator.ingest_api:app", "--host", "0.0.0.0", "--port", "8000"]
+          command: ["uvicorn", "log_aggregator.api.ingest:app", "--host", "0.0.0.0", "--port", "8000"]
           envFrom:
             - configMapRef:
                 name: app-config

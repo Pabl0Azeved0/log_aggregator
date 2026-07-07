@@ -1,7 +1,7 @@
 """Alerting worker: consume the logs stream on its own consumer group, evaluate threshold
 rules (domain) over the events, and notify + persist when one fires.
 
-Run: python -m log_aggregator.alerting
+Run: python -m log_aggregator.workers.alerting
 """
 
 from __future__ import annotations

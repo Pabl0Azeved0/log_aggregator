@@ -18,7 +18,7 @@ spec:
         - name: indexer
           image: log-aggregator:latest
           imagePullPolicy: IfNotPresent
-          command: ["python", "-m", "log_aggregator.indexer"]
+          command: ["python", "-m", "log_aggregator.workers.indexer"]
           envFrom:
             - configMapRef:
                 name: app-config

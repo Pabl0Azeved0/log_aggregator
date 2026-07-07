@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from log_aggregator import agent
+from log_aggregator.workers import agent
 
 
 class _FakeClient:

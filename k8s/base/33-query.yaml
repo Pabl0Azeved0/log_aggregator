@@ -16,7 +16,7 @@ spec:
         - name: query
           image: log-aggregator:latest
           imagePullPolicy: IfNotPresent
-          command: ["uvicorn", "log_aggregator.query_api:app", "--host", "0.0.0.0", "--port", "8080"]
+          command: ["uvicorn", "log_aggregator.api.query:app", "--host", "0.0.0.0", "--port", "8080"]
           envFrom:
             - configMapRef:
                 name: app-config

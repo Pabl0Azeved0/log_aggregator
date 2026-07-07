@@ -9,13 +9,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from log_aggregator import indexer
+from log_aggregator.workers import indexer
 from log_aggregator.adapters.memory_buffer import MemoryBuffer
 from log_aggregator.domain.errors import BufferFull
 from log_aggregator.config import Settings
-from log_aggregator.ingest_api import create_app as create_ingest_app
-from log_aggregator.models import LogEvent
-from log_aggregator.query_api import create_app as create_query_app
+from log_aggregator.api.ingest import create_app as create_ingest_app
+from log_aggregator.domain.models import LogEvent
+from log_aggregator.api.query import create_app as create_query_app
 from log_aggregator.adapters.memory_store import MemoryStore
 
 

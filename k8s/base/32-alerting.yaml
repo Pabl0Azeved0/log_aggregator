@@ -18,7 +18,7 @@ spec:
         - name: alerting
           image: log-aggregator:latest
           imagePullPolicy: IfNotPresent
-          command: ["python", "-m", "log_aggregator.alerting"]
+          command: ["python", "-m", "log_aggregator.workers.alerting"]
           envFrom:
             - configMapRef:
                 name: app-config

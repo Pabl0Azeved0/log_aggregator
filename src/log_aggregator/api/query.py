@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from log_aggregator.composition import make_store
 from log_aggregator.config import Settings, get_settings
 from log_aggregator.ports.store import Store
-from log_aggregator.security import make_require_tenant, mint_jwt, parse_api_keys
+from log_aggregator.api.security import make_require_tenant, mint_jwt, parse_api_keys
 
 _DASHBOARD = Path(__file__).parent / "static" / "dashboard.html"
 

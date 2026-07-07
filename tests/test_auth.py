@@ -6,12 +6,12 @@ import asyncio
 
 from fastapi.testclient import TestClient
 
-from log_aggregator import indexer
+from log_aggregator.workers import indexer
 from log_aggregator.adapters.memory_buffer import MemoryBuffer
 from log_aggregator.config import Settings
-from log_aggregator.ingest_api import create_app as create_ingest_app
-from log_aggregator.query_api import create_app as create_query_app
-from log_aggregator.security import mint_jwt, parse_api_keys, verify_jwt
+from log_aggregator.api.ingest import create_app as create_ingest_app
+from log_aggregator.api.query import create_app as create_query_app
+from log_aggregator.api.security import mint_jwt, parse_api_keys, verify_jwt
 from log_aggregator.adapters.memory_store import MemoryStore
 
 

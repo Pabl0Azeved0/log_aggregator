@@ -2,7 +2,7 @@
 `/logs/raw` endpoint. Backpressure is honored — a 429 is retried with exponential backoff,
 never dropped — and file truncation/rotation is handled by reopening.
 
-Run: python -m log_aggregator.agent   (configured via env, see main())
+Run: python -m log_aggregator.workers.agent   (configured via env, see main())
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 and dead-letter what cannot be indexed. Retention is applied on startup and then once
 per hour.
 
-Run: python -m log_aggregator.indexer
+Run: python -m log_aggregator.workers.indexer
 """
 
 from __future__ import annotations

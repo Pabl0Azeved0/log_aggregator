@@ -37,7 +37,7 @@ services:
     # single worker so the in-process Prometheus counters at /metrics are exact; the
     # throughput ceiling is the load generator (single connection), not this process —
     # scale out with multiple ingest replicas behind the same Kafka when needed.
-    command: uvicorn log_aggregator.ingest_api:app --host 0.0.0.0 --port 8000 --workers 1
+    command: uvicorn log_aggregator.api.ingest:app --host 0.0.0.0 --port 8000 --workers 1
     environment:
       BUFFER_BACKEND: kafka
       KAFKA_BOOTSTRAP: kafka:9092
@@ -49,7 +49,7 @@ services:
 
   indexer:
     build: .
-    command: python -m log_aggregator.indexer
+    command: python -m log_aggregator.workers.indexer
     environment:
       BUFFER_BACKEND: kafka
       KAFKA_BOOTSTRAP: kafka:9092
@@ -70,7 +70,7 @@ services:
 
   alerting:
     build: .
-    command: python -m log_aggregator.alerting
+    command: python -m log_aggregator.workers.alerting
     environment:
       BUFFER_BACKEND: kafka
       KAFKA_BOOTSTRAP: kafka:9092
@@ -87,7 +87,7 @@ services:
 
   query:
     build: .
-    command: uvicorn log_aggregator.query_api:app --host 0.0.0.0 --port 8080
+    command: uvicorn log_aggregator.api.query:app --host 0.0.0.0 --port 8080
     environment:
       STORE_BACKEND: opensearch
       OPENSEARCH_URL: http://opensearch:9200
@@ -109,7 +109,7 @@ services:
 
   agent:
     build: .
-    command: python -m log_aggregator.agent
+    command: python -m log_aggregator.workers.agent
     environment:
       INGEST_URL: http://ingest:8000
       AGENT_FILE: /shared/app.log

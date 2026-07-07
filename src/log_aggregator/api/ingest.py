@@ -9,9 +9,9 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from log_aggregator.composition import make_buffer
 from log_aggregator.config import Settings, get_settings
 from log_aggregator.domain.errors import BufferFull
-from log_aggregator.models import LogEvent, parse_line
+from log_aggregator.domain.models import LogEvent, parse_line
 from log_aggregator.ports.buffer import Buffer
-from log_aggregator.security import make_require_tenant
+from log_aggregator.api.security import make_require_tenant
 
 INGESTED = Counter("ingested_events_total", "Events accepted into the buffer")
 REJECTED = Counter("rejected_events_total", "Events rejected by backpressure")

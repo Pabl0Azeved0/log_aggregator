@@ -28,6 +28,12 @@ class Settings:
     s3_endpoint: str = field(default_factory=lambda: os.getenv("S3_ENDPOINT", "http://minio:9000"))
     s3_access_key: str = field(default_factory=lambda: os.getenv("S3_ACCESS_KEY", "minioadmin"))
     s3_secret_key: str = field(default_factory=lambda: os.getenv("S3_SECRET_KEY", "minioadmin"))
+    # multi-tenant auth — off by default (single "default" tenant, open APIs) so local dev,
+    # loadgen and offline tests need no secrets. API_KEYS maps bearer keys to tenants.
+    auth_enabled: bool = field(default_factory=lambda: os.getenv("AUTH_ENABLED", "false").lower() == "true")
+    api_keys: str = field(default_factory=lambda: os.getenv("API_KEYS", ""))
+    jwt_secret: str = field(default_factory=lambda: os.getenv("JWT_SECRET", "dev-only-jwt-secret-change-me-in-production"))
+    jwt_ttl_s: int = field(default_factory=lambda: int(os.getenv("JWT_TTL_S", "3600")))
 
 
 @lru_cache

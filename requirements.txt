@@ -6,6 +6,7 @@ opensearch-py[async]
 boto3
 httpx
 prometheus-client
+pyjwt
 python-dotenv
 pytest
 black

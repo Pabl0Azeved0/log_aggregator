@@ -6,27 +6,32 @@ MinIO, and the app workloads (`ingest` behind an HPA, `indexer` ×3 = one per Ka
 
 ```
 k8s/
-├── 00-namespace.yaml
-├── 10-config.yaml        ConfigMap (non-secret) + Secret (demo values — replace!)
-├── 20-kafka.yaml         StatefulSet ×3 (KRaft), headless + client Services
-├── 21-opensearch.yaml    StatefulSet ×3, headless + client Services
-├── 22-minio.yaml         Deployment + PVC + Service (archival target)
-├── 30-ingest.yaml        Deployment ×2 + Service + HorizontalPodAutoscaler (2→6, CPU 70%)
-├── 31-indexer.yaml       Deployment ×3 (one consumer per partition)
-├── 32-alerting.yaml      Deployment ×1 (own consumer group)
-├── 33-query.yaml         Deployment ×2 + Service + Ingress (log-aggregator.local)
-└── kustomization.yaml
+├── base/                 full multi-node deployment
+│   ├── 00-namespace.yaml
+│   ├── 10-config.yaml        ConfigMap (non-secret) + Secret (demo values — replace!)
+│   ├── 20-kafka.yaml         StatefulSet ×3 (KRaft), headless + client Services
+│   ├── 21-opensearch.yaml    StatefulSet ×3, headless + client Services
+│   ├── 22-minio.yaml         Deployment + PVC + Service (archival target)
+│   ├── 30-ingest.yaml        Deployment ×2 + Service + HorizontalPodAutoscaler (2→6, CPU 70%)
+│   ├── 31-indexer.yaml       Deployment ×3 (one consumer per partition)
+│   ├── 32-alerting.yaml      Deployment ×1 (own consumer group)
+│   ├── 33-query.yaml         Deployment ×2 + Service + Ingress (log-aggregator.local)
+│   └── kustomization.yaml
+└── overlays/
+    └── kind/             single-node overlay for a laptop smoke test (1 broker, 1 OS node)
 ```
 
 ## Deploy
 
 ```bash
-# 1. Build the app image and make it available to the cluster (kind example):
+# 1. Build the app image and load it into the cluster (kind example):
 docker build -t log-aggregator:latest .
 kind load docker-image log-aggregator:latest        # minikube: `minikube image load ...`
 
-# 2. Apply everything:
-kubectl apply -k k8s/
+# 2. Apply — full multi-node…
+kubectl apply -k k8s/base
+#    …or the single-node overlay for a laptop (fits in a few GiB):
+kubectl apply -k k8s/overlays/kind
 
 # 3. Watch it come up (Kafka + OpenSearch are StatefulSets, give them a minute):
 kubectl -n log-aggregator get pods -w
@@ -53,11 +58,10 @@ kubectl -n log-aggregator port-forward svc/query 8080:8080   # http://localhost:
   **OpenSearch Operator** — which handle rebalancing, rolling upgrades, and storage.
 - **Security:** OpenSearch runs with the security plugin disabled and Kafka as PLAINTEXT for
   the demo; enable TLS + auth before exposing anything.
-- **Validation status:** `kubectl kustomize k8s/` renders cleanly (20 resources, no
-  warnings); a structural pass confirms apiVersions, namespace/label propagation,
-  selector↔template consistency, resource blocks, and that every Service/HPA/Ingress
-  reference resolves; and **`kubeconform -strict` reports 20/20 valid, 0 skipped** against
-  the Kubernetes JSON schemas. Still pending (needs a live cluster): a server dry-run
-  (`kubectl apply --dry-run=server -k k8s/`) and a kind/minikube smoke deploy. The
-  multi-node throughput figure for the main README is **pending a real cluster run** — no
-  number is claimed until measured.
+- **Validation status:** kustomize renders cleanly, a structural pass and **`kubeconform
+  -strict` (20/20 valid, 0 skipped)** both pass, a **server dry-run** against a live API
+  server accepts all 20 resources, and the **`overlays/kind` single-node stack was deployed
+  and smoke-tested** on kind: all 8 pods reach Ready and a log POSTed to `ingest` flows
+  through Kafka → indexer → OpenSearch and is returned by `query` in a few seconds, with
+  auth enforced (401 without a credential). Still pending: a **multi-node throughput
+  measurement** on a real (multi-GiB) cluster — no number is claimed until measured.

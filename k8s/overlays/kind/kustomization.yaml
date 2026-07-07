@@ -1,0 +1,69 @@
+# Single-node overlay for a laptop smoke test on kind/minikube: scales the data plane to
+# one Kafka broker (RF=1) and one OpenSearch node so the whole stack fits in a few GiB.
+# Deploy: kubectl apply -k k8s/overlays/kind
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: log-aggregator
+
+resources:
+  - ../../base
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: kafka
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: kafka
+                env:
+                  - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+                    value: "0@kafka-0.kafka-headless:9093"
+                  - name: KAFKA_NUM_PARTITIONS
+                    value: "1"
+                  - name: KAFKA_DEFAULT_REPLICATION_FACTOR
+                    value: "1"
+                  - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+                    value: "1"
+                  - name: KAFKA_MIN_INSYNC_REPLICAS
+                    value: "1"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: opensearch
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: opensearch
+                env:
+                  - name: cluster.initial_cluster_manager_nodes
+                    value: "opensearch-0"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: indexer
+      spec:
+        replicas: 1
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ingest
+      spec:
+        replicas: 1
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: query
+      spec:
+        replicas: 1

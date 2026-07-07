@@ -6,6 +6,7 @@ metadata:
   name: opensearch-headless
 spec:
   clusterIP: None
+  publishNotReadyAddresses: true    # nodes must discover each other before they're Ready
   selector:
     app.kubernetes.io/component: opensearch
   ports:

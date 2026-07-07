@@ -55,12 +55,32 @@ class PartialIndexError(Exception):
 
 _DEFAULT_TENANT = "default"
 
+_ALERTS_TEMPLATE = {
+    "index_patterns": ["alerts"],
+    "template": {
+        "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+        "mappings": {
+            "properties": {
+                "timestamp": {"type": "date"},
+                "tenant": {"type": "keyword"},
+                "rule": {"type": "keyword"},
+                "level": {"type": "keyword"},
+                "service": {"type": "keyword"},
+                "count": {"type": "integer"},
+                "message": {"type": "text"},
+            }
+        },
+    },
+}
+
 
 class Store(Protocol):
     async def index(self, events: list[dict]) -> int: ...
     async def search(self, tenant: str = _DEFAULT_TENANT, q: str = "", level: str = "", service: str = "", limit: int = 100) -> list[dict]: ...
     async def count(self, tenant: str = _DEFAULT_TENANT) -> int: ...
     async def stats(self, tenant: str = _DEFAULT_TENANT) -> dict: ...
+    async def record_alert(self, alert: dict) -> None: ...
+    async def recent_alerts(self, tenant: str = _DEFAULT_TENANT, limit: int = 20) -> list[dict]: ...
     async def apply_retention(self) -> int: ...
     async def close(self) -> None: ...
 
@@ -116,6 +136,7 @@ class MemoryStore:
     def __init__(self, retention_days: int = 7) -> None:
         self._events: list[dict] = []
         self._ids: set[str] = set()
+        self._alerts: list[dict] = []
         self._retention_days = retention_days
 
     async def index(self, events: list[dict]) -> int:
@@ -160,6 +181,12 @@ class MemoryStore:
             by_service[e.get("service", "unknown")] = by_service.get(e.get("service", "unknown"), 0) + 1
         return {"total": total, "by_level": by_level, "by_service": by_service}
 
+    async def record_alert(self, alert: dict) -> None:
+        self._alerts.append(alert)
+
+    async def recent_alerts(self, tenant: str = _DEFAULT_TENANT, limit: int = 20) -> list[dict]:
+        return [a for a in reversed(self._alerts) if a.get("tenant", _DEFAULT_TENANT) == tenant][:limit]
+
     async def apply_retention(self) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(days=self._retention_days)
         before = len(self._events)
@@ -192,6 +219,7 @@ class OpenSearchStore:
             self._client = AsyncOpenSearch(hosts=[self._url], verify_certs=False)
         if not self._template_done:
             await self._client.indices.put_index_template(name="logs", body=_TEMPLATE)
+            await self._client.indices.put_index_template(name="alerts", body=_ALERTS_TEMPLATE)
             self._template_done = True
         return self._client
 
@@ -272,6 +300,16 @@ class OpenSearchStore:
                 await client.indices.delete(index=name)
                 removed += 1
         return removed
+
+    async def record_alert(self, alert: dict) -> None:
+        client = await self._get_client()
+        await client.index(index="alerts", body=alert, refresh=True)
+
+    async def recent_alerts(self, tenant: str = _DEFAULT_TENANT, limit: int = 20) -> list[dict]:
+        client = await self._get_client()
+        body = {"query": {"term": {"tenant": tenant}}, "sort": [{"timestamp": "desc"}], "size": limit}
+        res = await client.search(index="alerts", body=body, ignore_unavailable=True)
+        return [h["_source"] for h in res["hits"]["hits"]]
 
     # --- object-storage archival ---------------------------------------------------
 

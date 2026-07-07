@@ -66,89 +66,73 @@ offset → searchable via `query_api`. The same Kafka messages are independently
 
 ---
 
-## `src/log_aggregator/` (the pipeline)
+## `src/log_aggregator/` (hexagonal: domain ← ports ← adapters ← composition ← workers/api)
+
+Dependency arrow points inward. `domain` depends on nothing; `ports` are abstractions;
+`adapters` implement ports; `composition` wires adapters from `Settings`; `workers`/`api`
+depend on ports + composition, never on concrete adapters.
 
 - **`config.py`** — one env-driven `Settings` dataclass (buffer/store backends, Kafka
-  bootstrap/topic/**group**, OpenSearch URL, retention days, batch size/timeout, dead-letter
-  path, **archive** flags + S3 creds, **auth** flags + `API_KEYS`/`JWT_SECRET`, **alerting**
-  `ALERT_RULES`/`ALERT_WEBHOOK`). `get_settings()` is `@lru_cache`d (read once per process).
+  bootstrap/topic/**group**, OpenSearch URL, retention, batch, dead-letter, **archive** +
+  S3 creds, **auth** flags + `API_KEYS`/`JWT_SECRET`, **alerting** `ALERT_RULES`/`ALERT_WEBHOOK`).
+  `get_settings()` is `@lru_cache`d (read once per process).
+- **`composition.py`** — the single wiring root: **`make_buffer`** / **`make_store`** /
+  **`make_notifier`** (`settings` → concrete adapter). The only module that imports adapters.
 
-- **`models.py`** — **`LogEvent`** (pydantic): `timestamp` (default `utcnow`), `level`,
-  `service`, `message`, `attrs`, `tenant` (set authoritatively by the ingest API). A
-  `field_validator` normalizes level (aliases WARN→WARNING, FATAL→CRITICAL; unknown→INFO).
-  **`parse_line(raw, service)`** — tolerant parser: JSON lines map onto the schema; plain text
-  keeps the whole line as `message` with keyword-detected level; never raises.
+### `domain/` (pure — no I/O, no framework)
+- **`models.py`** — **`LogEvent`** (pydantic; `tenant` set authoritatively by ingest) + a level
+  normaliser; **`parse_line(raw, service)`** tolerant text/JSON parser (never raises).
+- **`ids.py`** — **`doc_id(event)`** deterministic SHA-1 over `(tenant, ts, service, level,
+  message, attrs)` → idempotent writes; **`parse_ts(value)`** timestamp coercion.
+- **`errors.py`** — **`BufferFull`** (backpressure) and **`PartialIndexError`** (carries
+  `indexed`/`failed` so only rejected docs are dead-lettered).
+- **`rules.py`** — **`Rule`** + **`load_rules(json)`** + **`RuleEngine`**: deterministic
+  sliding-window threshold detection per `(rule, tenant)` with cooldown, bounded memory
+  (`observe(event, now)` → fired alerts). Fully unit-tested with injected time.
 
-- **`buffer.py`** — the `Buffer` `Protocol` (`publish`, `get_batch`, **`commit`**, `close`) +
-  two backends. **`MemoryBuffer`** (bounded `asyncio.Queue`; `BufferFull` → 429; offline
-  tests). **`KafkaBuffer`** (aiokafka; producer created under a **double-checked
-  `asyncio.Lock`** so a cold-start burst never sends on an unstarted producer; consumer uses a
-  configurable `group_id`, `enable_auto_commit=False`; `commit()` commits offsets). Lazy
-  imports so importing the module needs no broker. `make_buffer(settings)` picks the backend.
+### `ports/` (abstractions only)
+- **`buffer.py`** — **`Buffer`** Protocol (`publish`, `get_batch`, `commit`, `close`).
+- **`store.py`** — **`Store`** Protocol + `DEFAULT_TENANT`.
 
-- **`store.py`** — the `Store` `Protocol` + `MemoryStore` (fake) + `OpenSearchStore` (real),
-  plus module helpers. The biggest file; owns indexing, search, stats, retention, archival.
-  - **`_doc_id(event)`** — deterministic SHA-1 over `(tenant, timestamp, service, level,
-    message, attrs)` → idempotent writes (a redelivered event overwrites, no dupe).
-  - **`_build_search_body(q, level, service, limit)`** — pure query builder; message search is
-    **`match_phrase_prefix`** (contiguous phrase, not loose OR) + `term` filters.
-  - **`ArchiveConfig`** — S3/MinIO target for retention archival.
-  - **`MemoryStore`** — list-backed, idempotent by `_doc_id`, tenant-filtered reads; alerts
-    list; delete-only retention.
-  - **`OpenSearchStore`** — index-per-tenant-per-day `logs-<tenant>-YYYY.MM.DD`; lazy client
-    that installs the `logs` + `alerts` index templates once; **`index`** via
-    `async_streaming_bulk` (per-doc errors → `PartialIndexError` so only rejects are
-    dead-lettered, not the whole batch); **`search`/`count`/`stats`** scoped to
-    `logs-<tenant>-*` (`stats` has a 1 s per-tenant TTL cache; `track_total_hits: true`);
-    **`record_alert`/`recent_alerts`** on a single `alerts` index (tenant filter);
-    **`apply_retention`** — for each expiring daily index, `_archive_index` (scan → gzip
-    JSONL → S3 via `asyncio.to_thread`) then delete; **`restore(name)`** re-indexes an
-    archived day (idempotent). `PartialIndexError` carries `indexed`/`failed`.
+### `adapters/` (concrete I/O)
+- **`memory_buffer.py`** — **`MemoryBuffer`** (bounded `asyncio.Queue`; `BufferFull` → 429).
+- **`kafka_buffer.py`** — **`KafkaBuffer`** (aiokafka; producer built under a **double-checked
+  `asyncio.Lock`** so a cold-start burst never sends on an unstarted producer; configurable
+  `group_id`, manual commit). Lazy imports — no broker needed to import.
+- **`memory_store.py`** — **`MemoryStore`** (list-backed, idempotent by `doc_id`,
+  tenant-filtered reads, alerts list, delete-only retention).
+- **`opensearch_store.py`** — **`OpenSearchStore`**: index-per-tenant-day
+  `logs-<tenant>-YYYY.MM.DD`; lazy client installs the `logs`+`alerts` templates once;
+  **`index`** via `async_streaming_bulk` (per-doc rejects → `PartialIndexError`);
+  `search`/`count`/`stats` scoped to `logs-<tenant>-*` (per-tenant 1 s stats cache);
+  `record_alert`/`recent_alerts`; `apply_retention` archives-then-deletes; `restore(name)`.
+  Holds **`_build_search_body`** (`match_phrase_prefix` + `term` filters) + index templates.
+- **`archive.py`** — **`ArchiveConfig`** + **`S3Archive`** (boto3 `put`/`fetch`, lazy client +
+  bucket-ensure). The store's archival delegates its object-store I/O here.
+- **`notify.py`** — **`make_notifier(settings)`**: POST fired alerts to a Slack-compatible
+  `ALERT_WEBHOOK`, or log to console.
 
-- **`ingest_api.py`** — FastAPI producer side. `create_app(buffer, settings)` builds a
-  `require_tenant` dependency, a `lifespan` that closes the buffer on shutdown (flushes the
-  producer's linger window), and a shared **`_accept(events)`** helper (publish → 202, or
-  `BufferFull` → **429**, incrementing Prometheus `INGESTED`/`REJECTED`). Endpoints:
-  **`POST /logs`** (`LogEvent | list`), **`POST /logs/raw`** (text via `parse_line`) — both
-  tag events with the authenticated tenant; **`/healthz`**, **`/metrics`**.
+### `workers/` (long-running processes)
+- **`indexer.py`** — `_dead_letter`, `_index_with_retry` (`PartialIndexError` → dead-letter
+  only rejects; transient → 3× backoff → dead-letter batch), **`run`** (hourly retention →
+  `get_batch` → index → **`commit`** only after a handled batch → effectively-once), SIGTERM shutdown.
+- **`alerting.py`** — the worker loop only: consume → `RuleEngine.observe` → notify +
+  `store.record_alert`, own consumer group, SIGTERM shutdown. (Rules live in `domain/rules.py`.)
+- **`agent.py`** — the shipper: **`ship`** (POST to `/logs/raw`, retry 429/transport, **never
+  drops**) + **`run`** (tail a file, batch, reopen on truncation). Env-configured `main`.
 
-- **`query_api.py`** — FastAPI read side. `create_app(store, settings)` with `require_tenant`
-  + a store-closing `lifespan`. **`GET /search`** / **`/stats`** / **`/alerts`**
-  (tenant-scoped), **`POST /auth/token`** (API key → short-lived JWT), **`/healthz`**, and
-  **`/`** serving the dashboard.
-
-- **`security.py`** — multi-tenant auth. `parse_api_keys("k:tenant,…")`, `mint_jwt` /
-  `verify_jwt` (HS256, PyJWT), `_bearer` header parse, and **`make_require_tenant(settings)`**
-  — a FastAPI dependency returning the caller's tenant from an API key **or** a JWT (401
-  otherwise). When `auth_enabled` is false it returns `"default"` (open dev mode).
-
-- **`indexer.py`** — the indexing worker. **`_dead_letter(path, events)`** writes JSONL;
-  **`_index_with_retry`** — `store.index`, on `PartialIndexError` dead-letter only the rejects
-  (no retry), on transient errors retry 3× with backoff then dead-letter the batch;
-  **`run(buffer, store, settings, once)`** — hourly retention + `get_batch` →
-  `_index_with_retry` → **`buffer.commit()`** (offset committed only after a batch is handled
-  → effectively-once with the idempotent `_id`). `_serve`/`main` add SIGTERM-clean shutdown.
-
-- **`alerting.py`** — the alerting worker (separate consumer group). **`Rule`** dataclass +
-  **`load_rules(json)`**; **`RuleEngine`** — deterministic sliding-window threshold detection
-  per `(rule, tenant)` with cooldown, bounded memory (`observe(event, now)` → fired alerts);
-  **`make_notifier(settings)`** — POST to a Slack-compatible `ALERT_WEBHOOK` or log to console;
-  **`run`** consumes → `engine.observe` → notify + `store.record_alert`; `_serve`/`main`.
-
-- **`agent.py`** — the log shipper (sidecar). **`ship(client, url, service, lines, headers,
-  sleep)`** — POST a batch to `/logs/raw`, retrying 429/transport errors with exponential
-  backoff (**never drops**). **`run`** tails a file (batch by size or flush interval, rewind
-  partial trailing lines, reopen on truncation/rotation). `main` reads `INGEST_URL`,
-  `AGENT_FILE`, `AGENT_SERVICE`, optional `AGENT_API_KEY`, etc.
-
-- **`static/dashboard.html`** — self-contained (no external assets) OLED-dark observability
-  dashboard: live KPI strip (total, computed ingest rate, level-distribution bar, top
-  services), phrase-prefix search + level/service filters, sticky-header live-tail table with
-  new-row flash, a firing-**alerts** panel, and a **sign-in overlay** (appears on 401; API key
-  → `/auth/token` → JWT in `localStorage`, sent as Bearer). Polls `/search`+`/stats`+`/alerts`
-  every 1.5 s.
-
-- **`__init__.py`** — empty package marker.
+### `api/` (HTTP interface)
+- **`ingest.py`** — FastAPI producer app. `create_app(buffer, settings)`: `require_tenant`
+  dependency, buffer-closing `lifespan`, shared **`_accept`** (202 / **429** + Prometheus
+  counters). `POST /logs`, `POST /logs/raw` (tag tenant), `/healthz`, `/metrics`.
+- **`query.py`** — FastAPI read app. `GET /search` / `/stats` / `/alerts` (tenant-scoped),
+  `POST /auth/token` (key → JWT), `/healthz`, `/` (dashboard).
+- **`security.py`** — `parse_api_keys`, `mint_jwt`/`verify_jwt` (HS256), and
+  **`make_require_tenant(settings)`** (API key **or** JWT → tenant, else 401; `"default"` when
+  auth off).
+- **`static/dashboard.html`** — self-contained OLED-dark dashboard: live KPI strip, phrase-prefix
+  search + filters, sticky-header live-tail with new-row flash, firing-**alerts** panel, and a
+  **sign-in overlay** (401 → API key → `/auth/token` → JWT in `localStorage`). Polls every 1.5 s.
 
 ---
 

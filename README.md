@@ -96,7 +96,7 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
   alerts POST to a Slack-compatible `ALERT_WEBHOOK` (console when unset) and surface on the
   dashboard via `GET /alerts`. Rules are JSON in `ALERT_RULES`, e.g.
   `[{"name":"error-burst","level":"ERROR","threshold":500,"window_s":10,"cooldown_s":30}]`.
-- **Shipper agent (sidecar):** `log_aggregator.agent` tails a file and ships lines to
+- **Shipper agent (sidecar):** `log_aggregator.workers.agent` tails a file and ships lines to
   `/logs/raw`, **honoring backpressure** — a `429` is retried with exponential backoff, never
   dropped — and reopening on truncation/rotation. Run the bundled demo with
   `docker compose --profile sidecar up -d` (a fake app + the agent shipping its logs).

@@ -74,16 +74,17 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
   offset to force redelivery — the document count stays flat.
 - **Failures are kept:** batches that exhaust indexing retries land in a JSONL
   dead-letter file for inspection, not dropped.
-- **Retention:** one index per day, deleted after `RETENTION_DAYS`.
+- **Tiered retention:** one index per day; after `RETENTION_DAYS` an expiring index is
+  exported to object storage (S3/MinIO) as gzipped JSONL, then deleted — not lost.
+  `OpenSearchStore.restore()` re-indexes an archived day back on demand (idempotent).
 - Offline tests exercise the exact pipeline with in-memory buffer/store fakes — no
   containers needed for `make test`.
 
 ## Limitations (v1, honest)
 
 Single-node Kafka and OpenSearch (throughput ceiling is the machine, not the design);
-no auth on the APIs; retention is delete-only.
+no auth on the APIs.
 
 ## Roadmap (v2+)
 
-Alerting rules · shipper agents/sidecars · multi-tenant auth · Kubernetes manifests ·
-long-term retention to object storage.
+Alerting rules · shipper agents/sidecars · multi-tenant auth · Kubernetes manifests.

@@ -14,6 +14,7 @@ class Settings:
     buffer_backend: str = field(default_factory=lambda: os.getenv("BUFFER_BACKEND", "kafka"))
     kafka_bootstrap: str = field(default_factory=lambda: os.getenv("KAFKA_BOOTSTRAP", "localhost:9092"))
     kafka_topic: str = field(default_factory=lambda: os.getenv("KAFKA_TOPIC", "logs"))
+    kafka_group: str = field(default_factory=lambda: os.getenv("KAFKA_GROUP", "indexer"))
     store_backend: str = field(default_factory=lambda: os.getenv("STORE_BACKEND", "opensearch"))
     opensearch_url: str = field(default_factory=lambda: os.getenv("OPENSEARCH_URL", "http://localhost:9200"))
     retention_days: int = field(default_factory=lambda: int(os.getenv("RETENTION_DAYS", "7")))
@@ -34,6 +35,10 @@ class Settings:
     api_keys: str = field(default_factory=lambda: os.getenv("API_KEYS", ""))
     jwt_secret: str = field(default_factory=lambda: os.getenv("JWT_SECRET", "dev-only-jwt-secret-change-me-in-production"))
     jwt_ttl_s: int = field(default_factory=lambda: int(os.getenv("JWT_TTL_S", "3600")))
+    # alerting — ALERT_RULES is a JSON array of rule objects; ALERT_WEBHOOK is an optional
+    # Slack-compatible incoming webhook (console log when unset).
+    alert_rules: str = field(default_factory=lambda: os.getenv("ALERT_RULES", ""))
+    alert_webhook: str = field(default_factory=lambda: os.getenv("ALERT_WEBHOOK", ""))
 
 
 @lru_cache

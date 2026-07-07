@@ -58,9 +58,10 @@ class KafkaBuffer:
     importing this module never requires a running broker. Consumer uses a consumer
     group with auto-commit — at-least-once delivery (documented in the README)."""
 
-    def __init__(self, bootstrap: str, topic: str) -> None:
+    def __init__(self, bootstrap: str, topic: str, group: str = "indexer") -> None:
         self._bootstrap = bootstrap
         self._topic = topic
+        self._group = group
         self._producer = None
         self._consumer = None
         self._producer_lock = asyncio.Lock()
@@ -95,7 +96,7 @@ class KafkaBuffer:
             self._consumer = AIOKafkaConsumer(
                 self._topic,
                 bootstrap_servers=self._bootstrap,
-                group_id="indexer",
+                group_id=self._group,
                 value_deserializer=lambda b: json.loads(b.decode()),
                 auto_offset_reset="earliest",
                 enable_auto_commit=False,  # offsets committed only after a batch is indexed
@@ -120,4 +121,4 @@ class KafkaBuffer:
 def make_buffer(settings: Settings) -> Buffer:
     if settings.buffer_backend == "memory":
         return MemoryBuffer(settings.memory_queue_max)
-    return KafkaBuffer(settings.kafka_bootstrap, settings.kafka_topic)
+    return KafkaBuffer(settings.kafka_bootstrap, settings.kafka_topic, settings.kafka_group)

@@ -54,10 +54,10 @@ kubectl -n log-aggregator port-forward svc/query 8080:8080   # http://localhost:
 - **Security:** OpenSearch runs with the security plugin disabled and Kafka as PLAINTEXT for
   the demo; enable TLS + auth before exposing anything.
 - **Validation status:** `kubectl kustomize k8s/` renders cleanly (20 resources, no
-  warnings) and a structural pass confirms apiVersions, namespace/label propagation,
+  warnings); a structural pass confirms apiVersions, namespace/label propagation,
   selector↔template consistency, resource blocks, and that every Service/HPA/Ingress
-  reference resolves. Still recommended before relying on these: JSON-schema validation
-  (`kubectl kustomize k8s/ | kubeconform -strict -summary`), a server dry-run against a
-  real cluster (`kubectl apply --dry-run=server -k k8s/`), and a kind/minikube smoke
-  deploy. The multi-node throughput figure for the main README is **pending a real cluster
-  run** — no number is claimed until measured.
+  reference resolves; and **`kubeconform -strict` reports 20/20 valid, 0 skipped** against
+  the Kubernetes JSON schemas. Still pending (needs a live cluster): a server dry-run
+  (`kubectl apply --dry-run=server -k k8s/`) and a kind/minikube smoke deploy. The
+  multi-node throughput figure for the main README is **pending a real cluster run** — no
+  number is claimed until measured.

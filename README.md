@@ -110,9 +110,10 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
 
 The **Docker Compose** demo is single-node (throughput ceiling is the machine, not the
 design). The **Kubernetes** manifests (`k8s/`) run multi-node Kafka + OpenSearch and scale
-ingest/indexer horizontally; they render cleanly (`kubectl kustomize`) and pass a
-structural check, but a live-cluster throughput measurement is still pending (no
-multi-node number is claimed until measured).
+ingest/indexer horizontally; they render cleanly (`kubectl kustomize`), pass a structural
+check, and validate against the Kubernetes schemas (`kubeconform -strict`, 20/20) — but a
+live-cluster smoke deploy and throughput measurement are still pending (no multi-node
+number is claimed until measured).
 
 ## Roadmap
 

@@ -7,6 +7,7 @@ from log_aggregator.adapters.archive import ArchiveConfig
 from log_aggregator.adapters.kafka_buffer import KafkaBuffer
 from log_aggregator.adapters.memory_buffer import MemoryBuffer
 from log_aggregator.adapters.memory_store import MemoryStore
+from log_aggregator.adapters.notify import make_notifier
 from log_aggregator.adapters.opensearch_store import OpenSearchStore
 from log_aggregator.config import Settings
 from log_aggregator.ports.buffer import Buffer

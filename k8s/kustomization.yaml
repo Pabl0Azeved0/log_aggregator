@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: log-aggregator
+
+commonLabels:
+  app.kubernetes.io/part-of: log-aggregator
+
+resources:
+  - 00-namespace.yaml
+  - 10-config.yaml
+  - 20-kafka.yaml
+  - 21-opensearch.yaml
+  - 22-minio.yaml
+  - 30-ingest.yaml
+  - 31-indexer.yaml
+  - 32-alerting.yaml
+  - 33-query.yaml

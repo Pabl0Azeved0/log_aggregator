@@ -1,0 +1,35 @@
+# One indexer replica per Kafka partition (3), all in the single "indexer" consumer group so
+# Kafka spreads the partitions across them — horizontal indexing throughput.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: indexer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: indexer
+    spec:
+      containers:
+        - name: indexer
+          image: log-aggregator:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "log_aggregator.indexer"]
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secret
+          env:
+            - name: BUFFER_BACKEND
+              value: "kafka"
+          resources:
+            requests:
+              cpu: "150m"
+              memory: 256Mi
+            limits:
+              memory: 512Mi

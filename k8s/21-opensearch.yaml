@@ -1,0 +1,95 @@
+# 3-node OpenSearch cluster (replicas ≥ 1 so a node loss doesn't lose data). Security plugin
+# disabled for the demo — enable TLS + auth for production. Node name is the pod hostname.
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch-headless
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/component: opensearch
+  ports:
+    - name: transport
+      port: 9300
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch
+spec:
+  selector:
+    app.kubernetes.io/component: opensearch
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: opensearch
+spec:
+  serviceName: opensearch-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: opensearch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: opensearch
+    spec:
+      initContainers:
+        - name: sysctl                      # OpenSearch needs vm.max_map_count raised
+          image: busybox:1.36
+          command: ["sh", "-c", "sysctl -w vm.max_map_count=262144"]
+          securityContext:
+            privileged: true
+      containers:
+        - name: opensearch
+          image: opensearchproject/opensearch:2.19.0
+          env:
+            - name: cluster.name
+              value: "log-aggregator"
+            - name: node.name
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: discovery.seed_hosts
+              value: "opensearch-headless"
+            - name: cluster.initial_cluster_manager_nodes
+              value: "opensearch-0,opensearch-1,opensearch-2"
+            - name: network.host
+              value: "0.0.0.0"
+            - name: DISABLE_SECURITY_PLUGIN
+              value: "true"
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+          ports:
+            - containerPort: 9200
+              name: http
+            - containerPort: 9300
+              name: transport
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/opensearch/data
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health?wait_for_status=yellow&timeout=5s
+              port: 9200
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+            limits:
+              memory: 1536Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

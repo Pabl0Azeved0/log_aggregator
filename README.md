@@ -5,19 +5,21 @@ them through **Kafka**, index them into **OpenSearch**, and search them through 
 API + live dashboard.
 
 ```
-producers ──► ingest API (FastAPI, async, backpressure)
-                 │
-                 ▼
-               Kafka (single-node KRaft)
-                 │
-                 ▼
-             indexer worker (batching · retries · dead-letter)
-                 │
-                 ▼
-            OpenSearch (daily indices · retention)
-                 │
-                 ▼
-        query API ──► dashboard (search · live tail)
+apps / file-shipping agent ──► ingest API (FastAPI, async, backpressure)
+                                   │
+                                   ▼
+                                 Kafka (single-node KRaft)
+                                   │
+                     ┌─────────────┴─────────────┐
+                     ▼                           ▼
+           indexer worker              alerting worker (rules · notify)
+        (batch · retry · dead-letter)
+                     │
+                     ▼
+            OpenSearch (daily indices · tiered retention)
+                     │
+                     ▼
+        query API ──► dashboard (search · live tail · alerts)
 ```
 
 ![log-aggreagator demo](docs/dashboard-demo.gif)
@@ -25,9 +27,11 @@ producers ──► ingest API (FastAPI, async, backpressure)
 ## Quickstart
 
 ```bash
-docker compose up -d --build     # kafka + opensearch + ingest + indexer + query
-make install                     # local venv (loadgen + tests)
-make loadgen                     # drive load through the pipeline, print measurements
+docker compose up -d --build             # kafka + opensearch + ingest + indexer + alerting + query
+make install                             # local venv (loadgen + tests)
+make loadgen                             # drive load through the pipeline, print measurements
+
+docker compose --profile sidecar up -d   # optional: a demo app + the file-shipping agent
 ```
 
 Dashboard: http://localhost:8080 · Ingest: `POST http://localhost:8000/logs`
@@ -88,6 +92,10 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
   alerts POST to a Slack-compatible `ALERT_WEBHOOK` (console when unset) and surface on the
   dashboard via `GET /alerts`. Rules are JSON in `ALERT_RULES`, e.g.
   `[{"name":"error-burst","level":"ERROR","threshold":500,"window_s":10,"cooldown_s":30}]`.
+- **Shipper agent (sidecar):** `log_aggregator.agent` tails a file and ships lines to
+  `/logs/raw`, **honoring backpressure** — a `429` is retried with exponential backoff, never
+  dropped — and reopening on truncation/rotation. Run the bundled demo with
+  `docker compose --profile sidecar up -d` (a fake app + the agent shipping its logs).
 - Offline tests exercise the exact pipeline with in-memory buffer/store fakes — no
   containers needed for `make test`.
 
@@ -97,4 +105,4 @@ Single-node Kafka and OpenSearch (throughput ceiling is the machine, not the des
 
 ## Roadmap (v2+)
 
-Shipper agents/sidecars · Kubernetes manifests.
+Kubernetes manifests (multi-node Kafka + OpenSearch, HPA).

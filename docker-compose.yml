@@ -55,10 +55,17 @@ services:
       KAFKA_BOOTSTRAP: kafka:9092
       STORE_BACKEND: opensearch
       OPENSEARCH_URL: http://opensearch:9200
+      ARCHIVE_ENABLED: "true"          # tiered retention: snapshot to object storage, then delete
+      ARCHIVE_BUCKET: log-archive
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
     depends_on:
       kafka:
         condition: service_healthy
       opensearch:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   query:
@@ -73,5 +80,23 @@ services:
       opensearch:
         condition: service_healthy
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
 volumes:
   osdata:
+  miniodata:

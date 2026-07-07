@@ -3,6 +3,7 @@ uvicorn[standard]
 pydantic
 aiokafka
 opensearch-py[async]
+boto3
 httpx
 prometheus-client
 python-dotenv

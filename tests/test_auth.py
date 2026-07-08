@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from fastapi.testclient import TestClient
 
 from log_aggregator.workers import indexer
@@ -27,6 +28,19 @@ def test_api_key_parsing_and_jwt_roundtrip():
     assert verify_jwt(token, secret) == "acme"
     assert verify_jwt(token, "another-secret-of-thirty-two-plus-bytes!!") is None
     assert verify_jwt("not-a-token", secret) is None
+
+
+def test_boot_fails_closed_on_weak_jwt_secret():
+    for weak in ("dev-only-jwt-secret-change-me-in-production",
+                 "change-me-to-a-32-plus-byte-random-secret", "", "short"):
+        s = Settings(auth_enabled=True, api_keys="k:acme", jwt_secret=weak)
+        with pytest.raises(RuntimeError):
+            create_query_app(store=MemoryStore(), settings=s)
+        with pytest.raises(RuntimeError):
+            create_ingest_app(buffer=MemoryBuffer(maxsize=1), settings=s)
+    # a real 32+ byte secret boots fine; auth-off never checks
+    create_query_app(store=MemoryStore(), settings=Settings(auth_enabled=True, api_keys="k:acme", jwt_secret="x" * 32))
+    create_query_app(store=MemoryStore(), settings=Settings(auth_enabled=False))
 
 
 def test_search_requires_credential_when_auth_enabled():

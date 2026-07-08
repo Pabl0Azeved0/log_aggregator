@@ -16,6 +16,27 @@ from log_aggregator.config import Settings
 
 DEFAULT_TENANT = "default"
 
+# Secrets that ship in this repo (code + k8s placeholder). Refusing them means an
+# AUTH_ENABLED=true deployment that forgot to set a real JWT_SECRET fails closed.
+_WEAK_JWT_SECRETS = {
+    "",
+    "dev-only-jwt-secret-change-me-in-production",
+    "change-me-to-a-32-plus-byte-random-secret",
+}
+
+
+def validate_auth_config(settings: Settings) -> None:
+    """Fail closed at boot: if auth is on, JWT_SECRET must be a real 32+ byte value, never a
+    default/placeholder — otherwise anyone who read the repo could forge tokens."""
+    if not settings.auth_enabled:
+        return
+    secret = settings.jwt_secret
+    if secret in _WEAK_JWT_SECRETS or len(secret.encode()) < 32:
+        raise RuntimeError(
+            "AUTH_ENABLED=true requires JWT_SECRET set to a strong, non-default value "
+            "(>= 32 bytes). Refusing to start with a placeholder/weak secret."
+        )
+
 
 def parse_api_keys(raw: str) -> dict[str, str]:
     """"k1:acme,k2:globex" -> {"k1": "acme", "k2": "globex"}."""

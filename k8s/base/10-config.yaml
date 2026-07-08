@@ -14,8 +14,9 @@ data:
   AUTH_ENABLED: "true"
   ALERT_RULES: '[{"name":"error-burst","level":"ERROR","threshold":500,"window_s":10,"cooldown_s":30}]'
 ---
-# Demo values only — replace before any real deployment (e.g. `kubectl create secret` or an
-# external secrets operator). Kept in-repo so `kubectl apply -k` works out of the box.
+# Demo placeholders — you MUST replace these. With AUTH_ENABLED=true the app fails closed on
+# this placeholder JWT_SECRET (it refuses to boot), so set a real 32+ byte secret via
+# `kubectl create secret generic app-secret ...` or an external-secrets operator.
 apiVersion: v1
 kind: Secret
 metadata:

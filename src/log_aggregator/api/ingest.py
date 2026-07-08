@@ -11,7 +11,7 @@ from log_aggregator.config import Settings, get_settings
 from log_aggregator.domain.errors import BufferFull
 from log_aggregator.domain.models import LogEvent, parse_line
 from log_aggregator.ports.buffer import Buffer
-from log_aggregator.api.security import make_require_tenant
+from log_aggregator.api.security import make_require_tenant, validate_auth_config
 
 INGESTED = Counter("ingested_events_total", "Events accepted into the buffer")
 REJECTED = Counter("rejected_events_total", "Events rejected by backpressure")
@@ -19,6 +19,7 @@ REJECTED = Counter("rejected_events_total", "Events rejected by backpressure")
 
 def create_app(buffer: Buffer | None = None, settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    validate_auth_config(settings)
     require_tenant = make_require_tenant(settings)
 
     @asynccontextmanager

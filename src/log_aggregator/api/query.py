@@ -9,13 +9,14 @@ from fastapi.responses import FileResponse
 from log_aggregator.composition import make_store
 from log_aggregator.config import Settings, get_settings
 from log_aggregator.ports.store import Store
-from log_aggregator.api.security import make_require_tenant, mint_jwt, parse_api_keys
+from log_aggregator.api.security import make_require_tenant, mint_jwt, parse_api_keys, validate_auth_config
 
 _DASHBOARD = Path(__file__).parent / "static" / "dashboard.html"
 
 
 def create_app(store: Store | None = None, settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    validate_auth_config(settings)
     require_tenant = make_require_tenant(settings)
 
     @asynccontextmanager

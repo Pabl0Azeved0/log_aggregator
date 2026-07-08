@@ -45,8 +45,26 @@ class RuleEngine:
         self.rules = rules
         self._hits: dict[tuple[str, str], deque[float]] = {}
         self._fired_at: dict[tuple[str, str], float] = {}
+        self._windows = {r.name: r.window_s for r in rules}
+        self._cooldowns = {r.name: r.cooldown_s for r in rules}
+        # sweep idle (rule, tenant) state ~once per window so per-tenant memory stays bounded
+        self._last_sweep = float("-inf")
+        self._sweep_interval = max((r.window_s for r in rules), default=0.0)
+
+    def _sweep(self, now: float) -> None:
+        """Evict keys whose newest hit is already outside the window (they hold no in-window
+        state, so a reappearing tenant re-accumulates identically) and that are past cooldown."""
+        for key in list(self._hits):
+            hits = self._hits[key]
+            if hits and now - hits[-1] >= self._windows.get(key[0], 0.0) \
+                    and now - self._fired_at.get(key, float("-inf")) >= self._cooldowns.get(key[0], 0.0):
+                del self._hits[key]
+                self._fired_at.pop(key, None)
+        self._last_sweep = now
 
     def observe(self, event: dict, now: float) -> list[dict]:
+        if now - self._last_sweep >= self._sweep_interval:
+            self._sweep(now)
         alerts: list[dict] = []
         tenant = event.get("tenant", "default")
         for rule in self.rules:

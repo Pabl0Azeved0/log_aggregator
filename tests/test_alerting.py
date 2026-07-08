@@ -42,6 +42,15 @@ def test_ignores_non_matching_events():
     assert engine.observe(_err(), 3) != []                    # 2nd match → fire
 
 
+def test_idle_tenant_state_is_evicted():
+    engine = RuleEngine([Rule("r", threshold=500, window_s=10, cooldown_s=30, level="ERROR")])
+    for i in range(5000):  # many one-shot tenants at t=0
+        engine.observe(_err(tenant=f"t{i}"), 0.0)
+    assert len(engine._hits) == 5000
+    engine.observe(_err(tenant="active"), 1000.0)  # time advances past the window → sweep
+    assert len(engine._hits) == 1  # idle tenants evicted, only the active one remains
+
+
 def test_rule_state_is_per_tenant():
     engine = RuleEngine([Rule("r", threshold=2, window_s=10, cooldown_s=100, level="ERROR")])
     assert engine.observe(_err("acme"), 0) == []

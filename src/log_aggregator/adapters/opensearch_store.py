@@ -163,6 +163,8 @@ class OpenSearchStore:
             "by_level": {b["key"]: b["doc_count"] for b in aggs.get("by_level", {}).get("buckets", [])},
             "by_service": {b["key"]: b["doc_count"] for b in aggs.get("by_service", {}).get("buckets", [])},
         }
+        # drop expired entries so the per-tenant cache can't grow unbounded across tenants
+        self._stats_cache = {t: v for t, v in self._stats_cache.items() if now - v[1] < _STATS_TTL_S}
         self._stats_cache[tenant] = (result, now)
         return result
 

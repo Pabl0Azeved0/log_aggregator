@@ -126,6 +126,22 @@ def test_restore_reindexes_from_archive():
     asyncio.run(flow())
 
 
+def test_stale_stats_cache_entries_are_evicted(monkeypatch):
+    import log_aggregator.adapters.opensearch_store as osm
+    clock = [1000.0]
+    monkeypatch.setattr(osm.time, "monotonic", lambda: clock[0])
+    store = _store_with(_FakeClient())
+
+    async def flow():
+        await store.stats("a")                 # cached at t=1000
+        assert set(store._stats_cache) == {"a"}
+        clock[0] = 1000 + 5                     # advance past the 1s TTL
+        await store.stats("b")                  # miss → recompute b, evict stale a
+        assert set(store._stats_cache) == {"b"}
+
+    asyncio.run(flow())
+
+
 def test_stats_is_cached_within_ttl():
     fake = _FakeClient()
     store = _store_with(fake)

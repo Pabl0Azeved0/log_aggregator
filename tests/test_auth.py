@@ -49,6 +49,13 @@ def test_search_requires_credential_when_auth_enabled():
     assert query.get("/search", headers={"Authorization": "Bearer nope"}).status_code == 401
 
 
+def test_wildcard_tenant_credential_rejected():
+    # an api key that maps to a wildcard tenant must not resolve (would widen logs-*-*)
+    s = Settings(auth_enabled=True, api_keys="wild:*", jwt_secret="test-secret-at-least-thirty-two-bytes-long")
+    query = TestClient(create_query_app(store=MemoryStore(), settings=s))
+    assert query.get("/search", headers={"Authorization": "Bearer wild"}).status_code == 401
+
+
 def test_disabled_auth_is_open():
     query = TestClient(create_query_app(store=MemoryStore(), settings=Settings(auth_enabled=False)))
     assert query.get("/search").status_code == 200

@@ -7,6 +7,7 @@ bearer credential — either a configured API key or a JWT minted from one via /
 
 from __future__ import annotations
 
+import re
 import time
 
 import jwt
@@ -15,6 +16,10 @@ from fastapi import Header, HTTPException
 from log_aggregator.config import Settings
 
 DEFAULT_TENANT = "default"
+
+# Tenant flows straight into the OpenSearch index pattern `logs-<tenant>-*`; restrict it so a
+# crafted value can't inject `*` / `,` (multi-index) and reach other tenants' indices.
+_TENANT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 # Secrets that ship in this repo (code + k8s placeholder). Refusing them means an
 # AUTH_ENABLED=true deployment that forgot to set a real JWT_SECRET fails closed.
@@ -81,7 +86,7 @@ def make_require_tenant(settings: Settings):
         if not token:
             raise HTTPException(status_code=401, detail="missing bearer credential")
         tenant = parse_api_keys(settings.api_keys).get(token) or verify_jwt(token, settings.jwt_secret)
-        if not tenant:
+        if not tenant or not _TENANT_RE.match(tenant):
             raise HTTPException(status_code=401, detail="invalid credential")
         return tenant
 

@@ -11,20 +11,25 @@ from log_aggregator.adapters.opensearch_store import OpenSearchStore, _build_sea
 
 
 class _FakeIndices:
-    def __init__(self, names, log):
-        self._names = names
+    def __init__(self, log):
         self.log = log
-
-    async def get(self, index=None, ignore_unavailable=True):
-        return {n: {} for n in self._names}
 
     async def delete(self, index=None):
         self.log.append(("delete", index))
 
 
+class _FakeCat:
+    def __init__(self, names):
+        self._names = names
+
+    async def indices(self, index=None, h=None, format=None):
+        return [{"index": n} for n in self._names]
+
+
 class _FakeIdxClient:
     def __init__(self, names, log):
-        self.indices = _FakeIndices(names, log)
+        self.indices = _FakeIndices(log)
+        self.cat = _FakeCat(names)
 
 
 def _archive_cfg(enabled):

@@ -171,9 +171,11 @@ class OpenSearchStore:
     async def apply_retention(self) -> int:
         client = await self._get_client()
         cutoff = datetime.now(timezone.utc) - timedelta(days=self._retention_days)
-        indices = await client.indices.get(index="logs-*", ignore_unavailable=True)
+        # names only — indices.get would transfer + parse full mappings/settings/aliases for
+        # every daily-per-tenant index just to read the names.
+        rows = await client.cat.indices(index="logs-*", h="index", format="json")
         removed = 0
-        for name in list(indices):
+        for name in [row["index"] for row in rows]:
             try:  # date is the last dash-segment: logs-<tenant>-YYYY.MM.DD (and legacy logs-YYYY.MM.DD)
                 day = datetime.strptime(name.rsplit("-", 1)[-1], "%Y.%m.%d").replace(tzinfo=timezone.utc)
             except ValueError:

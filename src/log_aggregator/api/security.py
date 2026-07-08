@@ -67,6 +67,25 @@ def verify_jwt(token: str, secret: str) -> str | None:
         return None
 
 
+class RateLimiter:
+    """Fixed-window per-key limiter. Expired windows are swept on each call so the map stays
+    bounded. In-process only (per worker) — fine for the low-volume /auth/token endpoint; a
+    horizontally-scaled deployment should also throttle at the gateway."""
+
+    def __init__(self, limit: int, window_s: float) -> None:
+        self._limit = limit
+        self._window = window_s
+        self._hits: dict[str, tuple[int, float]] = {}
+
+    def allow(self, key: str, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
+        self._hits = {k: v for k, v in self._hits.items() if now - v[1] < self._window}
+        count, start = self._hits.get(key, (0, now))
+        count += 1
+        self._hits[key] = (count, start)
+        return count <= self._limit
+
+
 def _bearer(authorization: str | None) -> str | None:
     if not authorization:
         return None

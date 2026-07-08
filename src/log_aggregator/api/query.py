@@ -3,13 +3,13 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from log_aggregator.composition import make_store
 from log_aggregator.config import Settings, get_settings
 from log_aggregator.ports.store import Store
-from log_aggregator.api.security import make_require_tenant, mint_jwt, parse_api_keys, validate_auth_config
+from log_aggregator.api.security import RateLimiter, make_require_tenant, mint_jwt, parse_api_keys, validate_auth_config
 
 _DASHBOARD = Path(__file__).parent / "static" / "dashboard.html"
 
@@ -33,8 +33,13 @@ def create_app(store: Store | None = None, settings: Settings | None = None) -> 
             app.state.store = make_store(get_settings())
         return app.state.store
 
+    token_limiter = RateLimiter(limit=10, window_s=60.0)  # per-IP, per worker
+
     @app.post("/auth/token")
-    async def auth_token(x_api_key: str = Header(...)):
+    async def auth_token(request: Request, x_api_key: str = Header(...)):
+        ip = request.client.host if request.client else "unknown"
+        if not token_limiter.allow(ip):
+            raise HTTPException(status_code=429, detail="too many requests")
         tenant = parse_api_keys(settings.api_keys).get(x_api_key)
         if not tenant:
             raise HTTPException(status_code=401, detail="invalid api key")

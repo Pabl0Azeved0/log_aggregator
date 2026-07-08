@@ -80,6 +80,12 @@ def test_tenant_isolation_end_to_end():
     assert query.get("/stats", headers=acme).json()["total"] == 1
 
 
+def test_auth_token_is_rate_limited():
+    query = TestClient(create_query_app(store=MemoryStore(), settings=_auth_settings()))
+    codes = [query.post("/auth/token", headers={"X-API-Key": "acmekey"}).status_code for _ in range(15)]
+    assert codes[0] == 200 and 429 in codes  # first succeed, then throttled per IP
+
+
 def test_api_key_exchanged_for_jwt():
     settings = _auth_settings()
     query = TestClient(create_query_app(store=MemoryStore(), settings=settings))

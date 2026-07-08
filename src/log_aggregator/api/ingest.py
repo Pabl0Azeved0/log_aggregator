@@ -32,6 +32,13 @@ def create_app(buffer: Buffer | None = None, settings: Settings | None = None) -
     app = FastAPI(title="log-aggregator ingest", lifespan=lifespan)
     app.state.buffer = buffer
 
+    @app.middleware("http")
+    async def _limit_body(request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl is not None and cl.isdigit() and int(cl) > settings.max_body_bytes:
+            return JSONResponse(status_code=413, content={"detail": "payload too large"})
+        return await call_next(request)
+
     def _buffer() -> Buffer:
         if app.state.buffer is None:
             app.state.buffer = make_buffer(get_settings())

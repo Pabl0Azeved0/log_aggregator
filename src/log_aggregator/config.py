@@ -21,6 +21,7 @@ class Settings:
     batch_size: int = field(default_factory=lambda: int(os.getenv("INDEXER_BATCH_SIZE", "500")))
     batch_timeout_s: float = field(default_factory=lambda: float(os.getenv("INDEXER_BATCH_TIMEOUT_S", "1.0")))
     memory_queue_max: int = field(default_factory=lambda: int(os.getenv("MEMORY_QUEUE_MAX", "100000")))
+    max_body_bytes: int = field(default_factory=lambda: int(os.getenv("MAX_BODY_BYTES", str(4 * 1024 * 1024))))
     dead_letter_path: str = field(default_factory=lambda: os.getenv("DEAD_LETTER_PATH", "dead_letter/failed.jsonl"))
     # retention archival — when enabled, an expiring index is exported to object storage
     # (S3/MinIO) as gzipped JSONL before it is deleted, instead of delete-only.

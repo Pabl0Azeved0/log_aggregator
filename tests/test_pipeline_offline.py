@@ -55,6 +55,12 @@ def test_ingest_returns_429_on_backpressure():
     assert r.status_code == 429
 
 
+def test_ingest_rejects_oversized_body():
+    ingest = TestClient(create_ingest_app(buffer=MemoryBuffer(maxsize=100), settings=Settings(max_body_bytes=200)))
+    assert ingest.post("/logs", json=[{"service": "x", "message": "m" * 500}]).status_code == 413
+    assert ingest.post("/logs", json={"service": "x", "message": "ok"}).status_code == 202
+
+
 def test_backpressure_raises_buffer_full():
     async def flow():
         buf = MemoryBuffer(maxsize=2)

@@ -28,6 +28,18 @@ def create_app(store: Store | None = None, settings: Settings | None = None) -> 
     app = FastAPI(title="log-aggregator query", lifespan=lifespan)
     app.state.store = store
 
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next):
+        resp = await call_next(request)
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"
+        # dashboard is self-contained; block all external loads, allow its inline script/style
+        resp.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
+        )
+        return resp
+
     def _store() -> Store:
         if app.state.store is None:
             app.state.store = make_store(get_settings())

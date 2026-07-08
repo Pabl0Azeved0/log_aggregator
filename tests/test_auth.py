@@ -56,6 +56,15 @@ def test_wildcard_tenant_credential_rejected():
     assert query.get("/search", headers={"Authorization": "Bearer wild"}).status_code == 401
 
 
+def test_dashboard_sends_security_headers():
+    query = TestClient(create_query_app(store=MemoryStore()))  # auth off → dashboard open
+    r = query.get("/")
+    assert r.status_code == 200
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+
+
 def test_disabled_auth_is_open():
     query = TestClient(create_query_app(store=MemoryStore(), settings=Settings(auth_enabled=False)))
     assert query.get("/search").status_code == 200

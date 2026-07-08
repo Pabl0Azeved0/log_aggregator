@@ -88,8 +88,10 @@ capped at a 512 MB heap. Target was ≥ 5k events/s single-node, ingest→search
 - **Multi-tenant auth:** set `AUTH_ENABLED=true` and `API_KEYS="key1:tenantA,key2:tenantB"`.
   Producers send `Authorization: Bearer <api-key>`; the dashboard exchanges a key for a
   short-lived JWT via `POST /auth/token`. Each tenant's data lives in its own indices
-  (`logs-<tenant>-*`) and reads are scoped to the caller — no cross-tenant access. Off by
-  default (single `default` tenant, open APIs) so local dev and `make loadgen` need no keys.
+  (`logs-<tenant>-*`) and reads are scoped to the caller — no cross-tenant access. With auth on
+  the app **fails closed** on a weak/placeholder `JWT_SECRET` (must be ≥32 bytes), and
+  `/auth/token` is per-IP rate-limited. Off by default (single `default` tenant, open APIs) so
+  local dev and `make loadgen` need no keys.
 - **Alerting:** a separate `alerting` worker consumes the same stream on its **own consumer
   group** (independent of the indexer) and evaluates threshold rules over sliding windows,
   per `(tenant, rule)`, with a cooldown so one incident isn't a thousand alerts. Fired

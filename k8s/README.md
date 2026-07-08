@@ -48,16 +48,26 @@ kubectl -n log-aggregator port-forward svc/query 8080:8080   # http://localhost:
   partition count (`KAFKA_NUM_PARTITIONS`, default 3) so each replica owns a partition.
 - **OpenSearch** scales by raising `replicas` (and shard/replica counts in the index template).
 
-## Production notes (honest)
+## Production notes (honest — security)
 
-- **Secrets:** `10-config.yaml` ships demo credentials so `apply -k` works out of the box —
-  replace `app-secret` with a real Secret (or an external-secrets/SealedSecrets flow) and set
-  `AUTH_ENABLED` + real `API_KEYS`/`JWT_SECRET`.
+- **You must set a real `JWT_SECRET`.** With `AUTH_ENABLED=true` (the base default) the app
+  **fails closed** on the placeholder secret in `10-config.yaml` — the ingest/query pods refuse
+  to boot until you replace `app-secret` with a real Secret (≥32-byte random `JWT_SECRET`, real
+  `API_KEYS`, non-`minioadmin` S3 creds), e.g. via `kubectl create secret` or an
+  external-secrets / SealedSecrets flow. This is intentional: it prevents shipping the demo
+  secret to production.
+- **Terminate TLS at the Ingress.** The provided `Ingress` has no `tls:` block — add a cert +
+  `tls:` (cert-manager) so credentials/tokens aren't sent in cleartext. Bearer tokens over plain
+  HTTP are interceptable.
+- **Lock down the data plane.** OpenSearch runs with the security plugin **disabled** and Kafka
+  as **PLAINTEXT** for the demo — anyone who can reach `:9200`/`:9092` bypasses the app's authz
+  entirely. Before production: enable the OpenSearch security plugin (TLS + auth), Kafka
+  SASL/TLS, and a `NetworkPolicy` so only the app pods can reach the datastores. Never expose
+  those ports publicly (the compose file binds them to localhost for dev only).
 - **Stateful services:** the Kafka and OpenSearch StatefulSets are hand-rolled for a
   self-contained demo. In production prefer operators — **Strimzi** (Kafka) and the
-  **OpenSearch Operator** — which handle rebalancing, rolling upgrades, and storage.
-- **Security:** OpenSearch runs with the security plugin disabled and Kafka as PLAINTEXT for
-  the demo; enable TLS + auth before exposing anything.
+  **OpenSearch Operator** — which handle rebalancing, rolling upgrades, storage, *and* the TLS/
+  auth above.
 - **Validation status:** kustomize renders cleanly, a structural pass and **`kubeconform
   -strict` (20/20 valid, 0 skipped)** both pass, a **server dry-run** against a live API
   server accepts all 20 resources, and the **`overlays/kind` single-node stack was deployed
